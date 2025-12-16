@@ -1,0 +1,12 @@
+body {
+  margin: 0;
+}
+a {
+  text-decoration: none;
+  color: inherit; /* inherit text color */
+  outline: none;  /* remove focus outline */
+}
+
+a:focus {
+  outline: none;  /* remove focus on keyboard click/tab */
+}
