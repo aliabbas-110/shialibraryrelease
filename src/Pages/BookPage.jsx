@@ -193,7 +193,7 @@ export default function BookPage() {
         <Breadcrumbs sx={{ mb: 4 }}>
           <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
             <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography>Home</Typography>
+              <Typography variant="body1">Home</Typography>
             </Stack>
           </Link>
           <Stack direction="row" alignItems="center" spacing={1}>
@@ -267,7 +267,7 @@ export default function BookPage() {
                   color="text.primary"
                   sx={{ mb: 3 }}
                 >
-                  <Box component="span" fontWeight="bold">Author:</Box> {book.author}
+                  <Box component="span">Author:</Box> {book.author}
                 </Typography>
               )}
 
@@ -323,7 +323,6 @@ export default function BookPage() {
             borderBottom: '2px solid',
             borderColor: 'primary.light'
           }}>
-            <MenuBookIcon color="primary" sx={{ fontSize: 32 }} />
             <Box sx={{ flex: 1 }}>
               <Typography variant="h4" fontWeight="bold" color="primary.main">
                 Chapters
@@ -392,14 +391,14 @@ export default function BookPage() {
                       minWidth: 60,
                       height: 60,
                       borderRadius: 2,
-                      backgroundColor: 'primary.main',
-                      color: 'white',
+                      borderColor: 'black',
+                      color: 'black',
                       mr: 3,
                       flexShrink: 0,
                     }}
                   >
                     <Typography variant="h6" fontWeight="bold">
-                      {ch.chapter_number}
+                      Chapter {ch.chapter_number}:
                     </Typography>
                   </Box>
 
@@ -412,7 +411,6 @@ export default function BookPage() {
                         fontWeight="medium"
                         color="text.primary"
                         sx={{ 
-                          mb: 0.5,
                           display: '-webkit-box',
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: 'vertical',

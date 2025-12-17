@@ -393,15 +393,15 @@ const handleFeedbackSubmit = async () => {
         {/* Breadcrumb Navigation */}
 <Breadcrumbs sx={{ mb: 4 }}>
   <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-    <Typography variant="body2">Home</Typography>
+    <Typography variant="body1">Home</Typography>
   </Link>
   <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
-    <Typography variant="body2">{book?.title || "Book"}</Typography>
+    <Typography variant="body1">{book?.title || "Book"}</Typography>
   </Link>
   <Typography 
     color="primary.main" 
     fontWeight="medium" 
-    variant="body2"
+    variant="body1"
     sx={{
       maxWidth: '300px',
       overflow: 'hidden',
