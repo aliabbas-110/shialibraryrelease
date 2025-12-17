@@ -9,7 +9,8 @@ import VolumePage from './Pages/VolumePage.jsx'
 import ChapterPage from './Pages/ChapterPage.jsx'
 import PasswordGate from './components/PasswordGate';
 import { ThemeProvider } from "@mui/material";
-import theme from './assets/theme.js'; // Adjust path as needed
+import theme from './assets/theme.js';
+import { Analytics } from '@vercel/analytics/react'; // Changed import path
 
 function App() {
   return (
@@ -25,6 +26,8 @@ function App() {
             <Route path="/book/:bookId/chapter/:chapterId" element={<ChapterPage />} />
           </Routes>
         </Router>
+        {/* Add Analytics component here */}
+        <Analytics />
       </PasswordGate>
     </ThemeProvider>
   );
