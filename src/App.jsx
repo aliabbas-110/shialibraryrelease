@@ -12,20 +12,23 @@ import PasswordGate from './components/PasswordGate';
 
 function App() {
   return (
+                  <PasswordGate>
+
       <Router>
         <Routes>
+
           <Route path="/" element={<Home />} />
-              <PasswordGate>
 
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/book/:bookId" element={<BookPage />} />
           <Route path="/volume/:volumeId" element={<VolumePage />} />
           <Route path="/book/:bookId/chapter/:chapterId" element={<ChapterPage />} />
-              </PasswordGate>
 
         </Routes>
       </Router>
+                    </PasswordGate>
+
   );
 }
 
