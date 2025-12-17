@@ -54,8 +54,8 @@ useEffect(() => {
   const filteredBooks = books.filter(book => book.category === category);
   const categories = ['Fazail', 'Ahkam'];
   const categoryDescriptions = {
-    'Fazail': 'Books about the virtues and merits of deeds and people',
-    'Ahkam': 'Books about Islamic rulings and jurisprudence'
+    'Fazail': 'Books about the virtues and merits of the 14 Infallibles a.s',
+    'Ahkam': 'Books about Islamic rulings'
   };
 
   return (
@@ -72,30 +72,7 @@ useEffect(() => {
           </Stack>
         </Breadcrumbs>
 
-        {/* Welcome Header */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, md: 4 },
-            mb: 4,
-            borderRadius: 3,
-            backgroundColor: '#f5f5f5',
-            border: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <MenuBookIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-              <Typography variant="h4" fontWeight="bold" color="primary.main">
-                Islamic Library
-              </Typography>
-            </Box>
-            <Typography variant="body1" color="text.primary">
-              Explore authentic Islamic books categorized by their content. Select a category to browse available books.
-            </Typography>
-          </Stack>
-        </Paper>
+
 
         {/* Category Tabs Section */}
         <Paper
@@ -110,25 +87,7 @@ useEffect(() => {
           }}
         >
           {/* Category Header */}
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 2,
-            mb: 3,
-            pb: 2,
-            borderBottom: '2px solid',
-            borderColor: 'divider'
-          }}>
-            <CategoryIcon color="primary" sx={{ fontSize: 32 }} />
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="h4" fontWeight="bold" color="primary.main">
-                Categories
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Select a category to filter books
-              </Typography>
-            </Box>
-          </Box>
+
 
           {/* Category Tabs */}
           <Paper

@@ -83,6 +83,48 @@ export default function ChapterPage() {
     window.scrollTo(0, 0);
   }, [chapterId]);
 
+// Scroll to specific hadith from search
+useEffect(() => {
+  const handleScrollToHadith = () => {
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#hadith-')) {
+      const hadithId = hash.replace('#hadith-', '');
+      
+      if (hadiths.length > 0) {
+        // Small delay to ensure DOM is ready
+        setTimeout(() => {
+          const element = document.getElementById(`hadith-${hadithId}`);
+          if (element) {
+            // Calculate position considering fixed navbar
+            const navbarHeight = 64;
+            const elementPosition = element.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - navbarHeight - 20;
+            
+            window.scrollTo({
+              top: offsetPosition,
+              behavior: 'smooth'
+            });
+            
+            // Add highlight effect
+            element.style.transition = 'background-color 0.5s ease';
+            element.style.backgroundColor = 'rgba(255, 255, 100, 0.15)';
+            element.style.borderRadius = '8px';
+            element.style.padding = '4px';
+            element.style.margin = '-4px';
+            
+            setTimeout(() => {
+              element.style.backgroundColor = '';
+              element.style.padding = '';
+              element.style.margin = '';
+            }, 2000);
+          }
+        }, 300);
+      }
+    }
+  };
+
+  handleScrollToHadith();
+}, [hadiths, chapterId]);
   // Fetch hadiths for this chapter
   useEffect(() => {
     const fetchHadiths = async () => {
@@ -136,61 +178,51 @@ export default function ChapterPage() {
   }, [chapterId]);
 
   // Fetch all chapters of this book for navigation - FIXED VERSION
-  useEffect(() => {
-    const fetchChapters = async () => {
-      const { data, error } = await supabase
+ // Fetch all chapters of this book for navigation - IMPROVED VERSION (like BookPage.jsx)
+// Fetch all chapters of this book for navigation - CORRECTED FOR YOUR SCHEMA
+// Fetch all chapters of this book for navigation - WORKING VERSION
+useEffect(() => {
+  const fetchChapters = async () => {
+    try {
+      // 1. Fetch all chapters for the specific book 
+      // via the volume relationship
+      const { data: volumesData } = await supabase
+        .from("volumes")
+        .select("id")
+        .eq("book_id", bookId);
+
+      if (!volumesData) return;
+      const volumeIds = volumesData.map(v => v.id);
+
+      // 2. Fetch chapters using ONLY the columns in your schema
+      const { data: chapterList, error } = await supabase
         .from("chapters")
-        .select("id, chapter_number, title_ar, title_en, volume_id")
+        .select("id, chapter_number, title_en, title_ar") // Matching your exact schema
+        .in("volume_id", volumeIds)
         .order("chapter_number", { ascending: true });
 
       if (error) {
-        console.error("Error fetching chapters:", error);
+        console.error("Fetch error:", error.message);
         return;
       }
 
-      // Get volumes for this book
-      const { data: volumesData, error: volumesError } = await supabase
-        .from("volumes")
-        .select("id, book_id")
-        .eq("book_id", bookId);
-
-      if (volumesError) {
-        console.error("Error fetching volumes:", volumesError);
-        return;
-      }
-
-      // Filter chapters: either they belong to this book's volumes OR have no volume_id
-      const bookChapterList = data.filter((chapter) => {
-        if (chapter.volume_id) {
-          // Chapter has a volume_id, check if it belongs to this book
-          return volumesData.some(volume => volume.id === chapter.volume_id);
-        } else {
-          // Chapter has no volume_id, include it (might be from books without volumes)
-          return true;
-        }
-      });
-
-      // Find current chapter index
-      const currentChapterId = parseInt(chapterId);
-      const index = bookChapterList.findIndex(
-        (c) => c.id === currentChapterId
-      );
-
-      setChapters(bookChapterList);
-      setCurrentIndex(index);
-      setCurrentChapter(bookChapterList[index] || null);
+      // 3. Sync the state
+      setChapters(chapterList);
       
-      // Debug logging
-      console.log("Total chapters fetched:", data?.length);
-      console.log("Book volumes:", volumesData);
-      console.log("Filtered chapters for book:", bookChapterList.length);
-      console.log("Current chapter ID:", chapterId);
-      console.log("Current chapter found:", bookChapterList[index]);
-      console.log("Current index:", index);
-    };
+      // Find where we are in the list
+      const index = chapterList.findIndex((c) => String(c.id) === String(chapterId));
+      setCurrentIndex(index);
+      setCurrentChapter(chapterList[index]);
 
+    } catch (err) {
+      console.error("System Error:", err);
+    }
+  };
+
+  if (bookId && chapterId) {
     fetchChapters();
-  }, [bookId, chapterId]);
+  }
+}, [bookId, chapterId]);
 
   const prevChapter = currentIndex > 0 ? chapters[currentIndex - 1] : null;
   const nextChapter =
@@ -202,33 +234,48 @@ export default function ChapterPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const getChapterTitle = (chapter) => {
-    if (!chapter) return "";
-    return chapter.title_en || chapter.title_ar || `Chapter ${chapter.chapter_number}`;
-  };
-
+const getChapterTitle = (chapter) => {
+  if (!chapter) return "";
+  // Try English title first, then Arabic, then just chapter number
+  return chapter.title_en || `Chapter ${chapter.chapter_number}`;
+};
   // Copy hadith to clipboard in the specified format
-  const copyHadithFormatted = (hadith) => {
-    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${hadith.hadith_reference?.reference || ""}`;
-    
-    navigator.clipboard.writeText(formattedText)
-      .then(() => {
-        setSnackbar({
-          open: true,
-          message: "Hadith copied in standard format!",
-          severity: "success"
-        });
-      })
-      .catch((err) => {
-        console.error("Failed to copy: ", err);
-        setSnackbar({
-          open: true,
-          message: "Failed to copy hadith",
-          severity: "error"
-        });
+const copyHadithFormatted = (hadith) => {
+  // Get the correct URL with full path
+  const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}`;
+  
+  // Get book name
+  const bookName = book?.title || book?.english_title || "Unknown Book";
+  
+  // Build reference line - check what reference data we have
+  let referenceLine = "";
+  if (hadith.hadith_reference?.reference) {
+    referenceLine = hadith.hadith_reference.reference;
+  } else {
+    // If no reference in database, use book and chapter number
+    referenceLine = `${bookName}, Chapter ${currentChapter?.chapter_number || "?"}`;
+  }
+  
+  // Format exactly like your example
+  const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}\n${hadithUrl}`;
+  
+  navigator.clipboard.writeText(formattedText)
+    .then(() => {
+      setSnackbar({
+        open: true,
+        message: "Hadith Text Copied To Clipboard",
+        severity: "success"
       });
-  };
-
+    })
+    .catch((err) => {
+      console.error("Failed to copy: ", err);
+      setSnackbar({
+        open: true,
+        message: "Failed to copy hadith",
+        severity: "error"
+      });
+    });
+};
   // Bookmark functionality
   const toggleBookmark = (hadithId) => {
     const savedBookmarks = JSON.parse(localStorage.getItem("hadithBookmarks") || "[]");
@@ -340,157 +387,98 @@ export default function ChapterPage() {
           <Stack direction="row" alignItems="center" spacing={1}>
             <MenuBookIcon fontSize="small" color="primary" />
             <Typography color="primary.main" fontWeight="medium">
-              Chapter {currentChapter?.chapter_number || ""}
+              Chapter {currentChapter?.chapter_number || "" }
             </Typography>
           </Stack>
         </Breadcrumbs>
 
-        {/* Chapter Navigation - Top of page */}
-        <Paper
-          elevation={1}
-          sx={{
-            mb: 4,
-            p: 2,
-            borderRadius: 3,
-            backgroundColor: "background.paper",
-            border: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 2,
-            }}
-          >
-            {/* Previous Chapter */}
-            <Tooltip title={prevChapter ? `Chapter ${prevChapter.chapter_number}: ${getChapterTitle(prevChapter)}` : "First Chapter"}>
-              <Button
-                variant="outlined"
-                disabled={!prevChapter}
-                onClick={() => {
-                  if (prevChapter) {
-                    navigate(`/book/${bookId}/chapter/${prevChapter.id}`);
-                  }
-                }}
-                startIcon={<ArrowBackIosNewIcon />}
-                sx={{
-                  flex: 1,
-                  py: 1.5,
-                  borderRadius: 2,
-                  '&.Mui-disabled': {
-                    borderColor: 'divider',
-                    color: 'text.disabled'
-                  }
-                }}
-              >
-                <Box sx={{ textAlign: "left", display: { xs: "none", sm: "block" } }}>
-                  <Typography variant="caption" display="block" color="inherit">
-                    Previous
-                  </Typography>
-                  {prevChapter && (
-                    <Typography variant="body2" fontWeight="medium" noWrap>
-                      Ch. {prevChapter.chapter_number}
-                    </Typography>
-                  )}
-                </Box>
-              </Button>
-            </Tooltip>
 
-            {/* Center Info */}
-            <Box sx={{ textAlign: "center", minWidth: 120 }}>
-              <Typography variant="body2" color="text.primary" fontWeight="medium">
-                Chapter {currentChapter?.chapter_number || "?"}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {currentIndex + 1} of {chapters.length}
-              </Typography>
-            </Box>
 
-            {/* Next Chapter */}
-            <Tooltip title={nextChapter ? `Chapter ${nextChapter.chapter_number}: ${getChapterTitle(nextChapter)}` : "Last Chapter"}>
-              <Button
-                variant="outlined"
-                disabled={!nextChapter}
-                onClick={() => {
-                  if (nextChapter) {
-                    navigate(`/book/${bookId}/chapter/${nextChapter.id}`);
-                  }
-                }}
-                endIcon={<ArrowForwardIosIcon />}
-                sx={{
-                  flex: 1,
-                  py: 1.5,
-                  borderRadius: 2,
-                  '&.Mui-disabled': {
-                    borderColor: 'divider',
-                    color: 'text.disabled'
-                  }
-                }}
-              >
-                <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
-                  <Typography variant="caption" display="block" color="inherit">
-                    Next
-                  </Typography>
-                  {nextChapter && (
-                    <Typography variant="body2" fontWeight="medium" noWrap>
-                      Ch. {nextChapter.chapter_number}
-                    </Typography>
-                  )}
-                </Box>
-              </Button>
-            </Tooltip>
-          </Box>
-        </Paper>
+{/* Chapter Header with Integrated Navigation */}
+<Box sx={{ 
+  display: 'flex', 
+  alignItems: 'center', 
+  justifyContent: 'space-between',
+  mb: 4,
+  gap: 2
+}}>
+  {/* Left Navigation Button */}
+  <Tooltip title={prevChapter ? `Previous Chapter (${prevChapter.chapter_number})` : "First Chapter"}>
+    <span>
+      <IconButton
+        onClick={() => prevChapter && navigate(`/book/${bookId}/chapter/${prevChapter.id}`)}
+        disabled={!prevChapter}
+        sx={{
+          width: 56,
+          height: 56,
+          backgroundColor: "primary.light",
+          "&:hover": {
+            backgroundColor: "primary.main",
+            color: "white",
+          },
+          "&.Mui-disabled": {
+            backgroundColor: "grey.100",
+            color: "grey.400",
+          }
+        }}
+      >
+        <ArrowBackIosNewIcon />
+      </IconButton>
+    </span>
+  </Tooltip>
 
-        {/* Chapter Header */}
-        {currentChapter && (
-          <Paper
-            elevation={0}
-            sx={{
-              p: { xs: 3, md: 4 },
-              mb: 4,
-              borderRadius: 3,
-              backgroundColor: "primary.light",
-              border: "1px solid",
-              borderColor: "primary.main",
-            }}
-          >
-            <Stack spacing={2}>
-              <Typography variant="h4" fontWeight="bold" color="primary.dark">
-                {getChapterTitle(currentChapter)}
-              </Typography>
-              
-              {currentChapter.title_ar && currentChapter.title_ar !== currentChapter.title_en && (
-                <Typography
-                  variant="h5"
-                  color="text.secondary"
-                  sx={{
-                    direction: "rtl",
-                    textAlign: "right",
-                    fontFamily: "inherit",
-                    fontWeight: 500,
-                  }}
-                >
-                  {currentChapter.title_ar}
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
-        )}
+  {/* Centered Chapter Info */}
+{/* Centered Chapter Info */}
+<Box sx={{ 
+  flex: 1, 
+  textAlign: 'center',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center'
+}}>
+  <Typography variant="h4" fontWeight="bold" color="primary.dark" gutterBottom>
+    {getChapterTitle(currentChapter)}
+  </Typography>
 
-        {/* Hadith Count */}
-        {hadiths.length > 0 && !loading && (
-          <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 2 }}>
-            <FormatQuoteIcon color="primary" />
-            <Typography variant="h6" color="text.secondary">
-              {hadiths.length} Hadith{hadiths.length !== 1 ? "s" : ""} in this chapter
-            </Typography>
-          </Box>
-        )}
+  
+  {/* Chapter Number and Count - FIXED to use chapter_number */}
+  <Typography variant="body1" color="text.secondary">
+    Chapter {currentChapter?.chapter_number || "Loading..."} • {currentIndex >= 0 ? currentIndex + 1 : "?"} of {chapters.length}
+  </Typography>
+  
+  {/* Hadith Count */}
+  {hadiths.length > 0 && !loading && (
+    <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+      {hadiths.length} Hadith{hadiths.length !== 1 ? "s" : ""}
+    </Typography>
+  )}
+</Box>
 
+  {/* Right Navigation Button */}
+  <Tooltip title={nextChapter ? `Next Chapter (${nextChapter.chapter_number})` : "Last Chapter"}>
+    <span>
+      <IconButton
+        onClick={() => nextChapter && navigate(`/book/${bookId}/chapter/${nextChapter.id}`)}
+        disabled={!nextChapter}
+        sx={{
+          width: 56,
+          height: 56,
+          backgroundColor: "primary.light",
+          "&:hover": {
+            backgroundColor: "primary.main",
+            color: "white",
+          },
+          "&.Mui-disabled": {
+            backgroundColor: "grey.100",
+            color: "grey.400",
+          }
+        }}
+      >
+        <ArrowForwardIosIcon />
+      </IconButton>
+    </span>
+  </Tooltip>
+</Box>
         {/* Hadiths List */}
         {loading ? (
           // Skeleton loading
@@ -503,23 +491,24 @@ export default function ChapterPage() {
           ))
         ) : hadiths.length > 0 ? (
           hadiths.map((h, idx) => (
-            <Paper
-              key={h.id || idx}
-              sx={{
-                p: { xs: 2, md: 3 },
-                mb: 4,
-                borderRadius: 3,
-                borderLeft: "4px solid",
-                borderLeftColor: "primary.main",
-                position: "relative",
-                "&:hover": {
-                  boxShadow: 4,
-                  transform: "translateY(-2px)",
-                  transition: "all 0.2s ease",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
+<Paper
+  key={h.id || idx}
+  id={`hadith-${h.id}`} // Add this for anchor linking
+  sx={{
+    p: { xs: 2, md: 3 },
+    mb: 4,
+    borderRadius: 3,
+    borderLeft: "4px solid",
+    borderLeftColor: "primary.main",
+    position: "relative",
+    "&:hover": {
+      boxShadow: 4,
+      transform: "translateY(-2px)",
+      transition: "all 0.2s ease",
+    },
+    transition: "all 0.2s ease",
+  }}
+>
               {/* Action Icons in Top Right */}
               <Box
                 sx={{
@@ -590,7 +579,7 @@ export default function ChapterPage() {
               <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3, pr: 6 }}>
                 <Chip
                   label={`Hadith ${h.hadith_number}`}
-                  color="primary"
+                  color="primary.light"
                   variant="outlined"
                 />
                 <Divider orientation="vertical" flexItem />
