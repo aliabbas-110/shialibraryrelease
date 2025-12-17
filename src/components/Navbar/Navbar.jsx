@@ -357,9 +357,9 @@ const Navbar = () => {
   };
 
   const navLinks = [
-    { text: 'Home', path: '/', icon: <HomeIcon fontSize="small" /> },
-    { text: 'About', path: '/about', icon: <InfoIcon fontSize="small" /> },
-    { text: 'Contact', path: '/contact', icon: <ContactMailIcon fontSize="small" /> },
+    { text: 'Home', path: '/',  },
+    { text: 'About', path: '/about',  },
+    { text: 'Contact', path: '/contact', },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -441,7 +441,7 @@ const Navbar = () => {
         sx={{ 
           backgroundColor: '#000000',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          height: 64,
+          height: 75,
         }}
       >
         <Container maxWidth="lg" sx={{ height: '100%' }}>
@@ -516,6 +516,7 @@ const Navbar = () => {
                 flex: 1, 
                 maxWidth: 400,
                 mx: 2,
+                ml: 15,
                 position: 'relative',
                 zIndex: theme.zIndex.appBar + 1,
                 height: '100%',
