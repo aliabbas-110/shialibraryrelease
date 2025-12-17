@@ -440,13 +440,15 @@ const Navbar = () => {
   elevation={0}
   sx={{
     backgroundColor: 'rgba(0, 0, 0, 0.55)', // Reduced opacity for more transparency
-    backdropFilter: 'blur(8px)', // Increased blur
+    backdropFilter: 'blur(7px)', // Increased blur
     WebkitBackdropFilter: 'blur(12px)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
     height: 70,
     transition: 'all 0.3s ease',
     // Add gradient for better visual effect
     backgroundImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5))',
+        zIndex: 1300, // Fixed: Use a high z-index (MUI's default is 1100-1200 for AppBar)
+
     // Ensure it's always on top
     zIndex: theme.zIndex.appBar,
   }}
@@ -472,7 +474,7 @@ const Navbar = () => {
                 cursor: 'pointer',
                 flexShrink: 0,
                 '&:hover': {
-                  '& .logo-image': { transform: 'scale(1.05)' }
+                  '& .logo-image': { transform: 'scale(1.1)' }
                 }
               }}
             >
@@ -508,7 +510,7 @@ const Navbar = () => {
                   sx={{
                     color: 'rgba(255, 255, 255, 0.7)',
                     fontWeight: 400,
-                    fontSize: '0.65rem',
+                    fontSize: '0.6rem',
                     letterSpacing: '0.5px',
                   }}
                 >
@@ -523,7 +525,7 @@ const Navbar = () => {
                 flex: 1, 
                 maxWidth: 400,
                 mx: 2,
-                ml: 14,
+                ml: 12,
                 position: 'relative',
                 zIndex: theme.zIndex.appBar + 1,
                 height: '100%',
@@ -778,59 +780,56 @@ const Navbar = () => {
                 )}
               </Box>
             )}
-
-            {/* Desktop Menu Links */}
-            {!isMobile && (
-              <Box sx={{ 
-                display: 'flex', 
-                gap: 0.5, 
-                flexShrink: 0,
-                height: '100%',
-                alignItems: 'center',
-              }}>
-                {navLinks.map((link) => (
-                  <Button
-                    key={link.text}
-                    component={Link}
-                    to={link.path}
-                    startIcon={link.icon}
-                    onMouseEnter={() => setHoveredLink(link.path)}
-                    onMouseLeave={() => setHoveredLink(null)}
-                    sx={{
-                      color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
-                      fontWeight: isActive(link.path) ? 600 : 400,
-                      backgroundColor: isActive(link.path) ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      borderRadius: 1,
-                      px: 2,
-                      py: 0.75,
-                      minWidth: 'auto',
-                      minHeight: 36,
-                      fontSize: '0.875rem',
-                      transition: 'all 0.3s ease',
-                      '&:before': {
-                        content: '""',
-                        position: 'absolute',
-                        bottom: 0,
-                        left: hoveredLink === link.path || isActive(link.path) ? '0%' : '-100%',
-                        width: '100%',
-                        height: '2px',
-                        backgroundColor: '#ffffff',
-                        transition: 'left 0.3s ease',
-                      },
-                      '&:hover': {
-                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                        color: '#ffffff',
-                      },
-                    }}
-                  >
-                    {link.text}
-                  </Button>
-                ))}
-              </Box>
-            )}
-
+{/* Desktop Menu Links */}
+{!isMobile && (
+  <Box sx={{ 
+    display: 'flex', 
+    gap: 0.5, 
+    flexShrink: 0,
+    height: '100%',
+    alignItems: 'center',
+  }}>
+    {navLinks.map((link) => (
+      <Button
+        key={link.text}
+        component={Link}
+        to={link.path}
+        startIcon={link.icon}
+        sx={{
+          color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+          fontWeight: isActive(link.path) ? 600 : 400,
+          backgroundColor: isActive(link.path) ? 'transparent' : 'transparent', // No background on active
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: 1,
+          px: 2,
+          py: 0.75,
+          minWidth: 'auto',
+          minHeight: 36,
+          fontSize: '0.875rem',
+          transition: 'all 0.3s ease',
+          // White underline when active
+          '&:after': isActive(link.path) ? {
+            content: '""',
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            height: '2px',
+            backgroundColor: '#ffffff',
+          } : {},
+          // On hover - grey background glow (like before)
+          '&:hover': {
+            backgroundColor: 'rgba(255, 255, 255, 0.08)', // Grey glow background
+            color: '#ffffff', // Keep text white on hover
+          },
+        }}
+      >
+        {link.text}
+      </Button>
+    ))}
+  </Box>
+)}
             {/* Mobile: Search Icon & Menu */}
             {isMobile && (
               <Box sx={{ 
@@ -1027,115 +1026,146 @@ const Navbar = () => {
         </Container>
       </AppBar>
 
-      {/* Mobile Drawer */}
-      <Drawer 
-        anchor="right" 
-        open={drawerOpen} 
-        onClose={toggleDrawer(false)}
-        PaperProps={{
-          sx: {
-            width: 280,
-            backgroundColor: '#000000',
-            borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-          }
-        }}
-      >
-       <Box sx={{ width: 320, p: 3.5 }}>
-  <Box 
-    onClick={handleLogoClick}
-    sx={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: 3.5,
-      mb: 5,
-      mt: 3,
-      cursor: 'pointer',
-      p: 1.5,
-      borderRadius: 3,
-      '&:hover': {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-      }
-    }}
-  >
-    <Box
-      component="img"
-      src={myLogo}
-      alt="Ghadir Project Logo"
+{/* Mobile Drawer */}
+<Drawer 
+  anchor="right" 
+  open={drawerOpen} 
+  onClose={toggleDrawer(false)}
+  PaperProps={{
+    sx: {
+      width: { xs: '85%', sm: 280 },
+      maxWidth: 320,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)', // Darker background for better readability
+      backdropFilter: 'blur(10px)', // Subtle blur
+      WebkitBackdropFilter: 'blur(10px)',
+      borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
+      // Optional gradient for subtle gloss
+      backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+      boxShadow: '0 0 20px rgba(0, 0, 0, 0.3)', // Soft shadow for depth
+    }
+  }}
+>
+  <Box sx={{ 
+    p: 2, // Reduced padding
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  }}>
+    {/* Logo Section - Smaller for mobile */}
+    <Box 
+      onClick={handleLogoClick}
       sx={{ 
-        height: 70, // Even larger logo
-        width: 70,
-        borderRadius: '50%',
-        objectFit: 'cover',
-        border: '4px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 2, // Reduced gap
+        mb: 3, // Reduced margin
+        mt: 1, // Reduced margin
+        cursor: 'pointer',
+        p: 1,
+        borderRadius: 2,
+        '&:hover': {
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        }
       }}
-    />
-    <Box>
-      <Typography 
-        variant="h4" // Using h4 for very large text
+    >
+      <Box
+        component="img"
+        src={myLogo}
+        alt="Ghadir Project Logo"
         sx={{ 
-          color: '#ffffff', 
-          fontWeight: 800,
-          fontSize: '1.6rem',
-          letterSpacing: '0.5px'
+          height: 60, // Smaller logo for mobile
+          width: 60,
+          borderRadius: '50%',
+          objectFit: 'cover',
+        }}
+      />
+      <Box>
+        <Typography 
+          variant="h6" // Smaller variant for mobile
+          sx={{ 
+            color: '#ffffff', 
+            fontWeight: 700,
+            fontSize: '1.2rem', // Smaller font size
+            letterSpacing: '0.3px'
+          }}
+        >
+          Shia Library
+        </Typography>
+        <Typography 
+          variant="body2" // Changed to body2
+          sx={{ 
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '0.85rem', // Smaller font size
+            fontWeight: 400
+          }}
+        >
+          Ghadir Project
+        </Typography>
+      </Box>
+    </Box>
+    
+    <Divider sx={{ 
+      borderColor: 'rgba(255, 255, 255, 0.15)', 
+      mb: 3, // Reduced margin
+      borderWidth: 1 // Thinner border
+    }} />
+    
+    {/* Navigation Links */}
+    <List sx={{ flex: 1 }}>
+      {navLinks.map((link) => (
+        <ListItem key={link.text} disablePadding>
+          <ListItemButton
+            component={Link}
+            to={link.path}
+            onClick={toggleDrawer(false)}
+            sx={{
+              color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+              backgroundColor: isActive(link.path) ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+              borderRadius: 1,
+              mb: 0.5,
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              }
+            }}
+          >
+            <ListItemIcon sx={{ 
+              color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.7)',
+              minWidth: 36 // Smaller icon spacing
+            }}>
+              {link.icon}
+            </ListItemIcon>
+            <ListItemText 
+              primary={link.text}
+              primaryTypographyProps={{
+                fontWeight: isActive(link.path) ? 600 : 400,
+                fontSize: '0.95rem' // Slightly smaller font
+              }}
+            />
+          </ListItemButton>
+        </ListItem>
+      ))}
+    </List>
+    
+    {/* Optional: Add footer or version info */}
+    <Box sx={{ 
+      mt: 'auto', 
+      pt: 2,
+      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+    }}>
+      <Typography 
+        variant="caption" 
+        sx={{ 
+          color: 'rgba(255, 255, 255, 0.5)',
+          fontSize: '0.75rem',
+          display: 'block',
+          textAlign: 'center'
         }}
       >
-        Shia Library
-      </Typography>
-      <Typography 
-        variant="subtitle1"
-        sx={{ 
-          color: 'rgba(255, 255, 255, 0.8)',
-          fontSize: '1.1rem',
-          fontWeight: 500
-        }}
-      >
-        Ghadir Project
+        © {new Date().getFullYear()} Ghadir Project
       </Typography>
     </Box>
   </Box>
-  
-  <Divider sx={{ 
-    borderColor: 'rgba(255, 255, 255, 0.15)', 
-    mb: 4,
-    mt: 1,
-    borderWidth: 2
-  }} />
-          <List>
-            {navLinks.map((link) => (
-              <ListItem key={link.text} disablePadding>
-                <ListItemButton
-                  component={Link}
-                  to={link.path}
-                  onClick={toggleDrawer(false)}
-                  sx={{
-                    color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
-                    backgroundColor: isActive(link.path) ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                    borderRadius: 1,
-                    mb: 0.5,
-                    '&:hover': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                    }
-                  }}
-                >
-                  <ListItemIcon sx={{ 
-                    color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.7)',
-                    minWidth: 40 
-                  }}>
-                    {link.icon}
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={link.text}
-                    primaryTypographyProps={{
-                      fontWeight: isActive(link.path) ? 600 : 400,
-                    }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
+</Drawer>
     </>
   );
 };

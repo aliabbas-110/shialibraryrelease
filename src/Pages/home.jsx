@@ -9,7 +9,6 @@ import { ThemeProvider } from "@mui/material";
 export function Home () {
   return (
     <>
-        <Navbar />
         <Hero/>
         <Coffee/>
 
