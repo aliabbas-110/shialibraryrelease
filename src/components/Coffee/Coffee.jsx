@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../Navbar/Navbar.jsx';
 import { supabase } from '../../config/supabaseClient.js';
 import { ThemeProvider } from '@mui/material';
-import theme from '/Users/Ali/Downloads/React-Material-UI--main/src/assets/theme.js';
+import theme from '../../assets/theme.js';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import CategoryIcon from '@mui/icons-material/Category';
 import HomeIcon from '@mui/icons-material/Home';
