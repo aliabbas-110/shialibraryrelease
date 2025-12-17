@@ -8,27 +8,25 @@ import BookPage from './Pages/BookPage.jsx'
 import VolumePage from './Pages/VolumePage.jsx'
 import ChapterPage from './Pages/ChapterPage.jsx'
 import PasswordGate from './components/PasswordGate';
-
+import { ThemeProvider } from "@mui/material";
+import theme from './assets/theme.js'; // Adjust path as needed
 
 function App() {
   return (
-                  <PasswordGate>
-
-      <Router>
-        <Routes>
-
-          <Route path="/" element={<Home />} />
-
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/book/:bookId" element={<BookPage />} />
-          <Route path="/volume/:volumeId" element={<VolumePage />} />
-          <Route path="/book/:bookId/chapter/:chapterId" element={<ChapterPage />} />
-
-        </Routes>
-      </Router>
-                    </PasswordGate>
-
+    <ThemeProvider theme={theme}>
+      <PasswordGate>
+        <Router>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/book/:bookId" element={<BookPage />} />
+            <Route path="/volume/:volumeId" element={<VolumePage />} />
+            <Route path="/book/:bookId/chapter/:chapterId" element={<ChapterPage />} />
+          </Routes>
+        </Router>
+      </PasswordGate>
+    </ThemeProvider>
   );
 }
 

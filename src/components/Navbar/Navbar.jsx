@@ -435,15 +435,23 @@ const Navbar = () => {
 
   return (
     <>
-      <AppBar 
-        position="fixed" 
-        elevation={0}
-        sx={{ 
-          backgroundColor: '#000000',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          height: 75,
-        }}
-      >
+<AppBar 
+  position="fixed"
+  elevation={0}
+  sx={{
+    backgroundColor: 'rgba(0, 0, 0, 0.55)', // Reduced opacity for more transparency
+    backdropFilter: 'blur(8px)', // Increased blur
+    WebkitBackdropFilter: 'blur(12px)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+    height: 70,
+    transition: 'all 0.3s ease',
+    // Add gradient for better visual effect
+    backgroundImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5))',
+    // Ensure it's always on top
+    zIndex: theme.zIndex.appBar,
+  }}
+>
+
         <Container maxWidth="lg" sx={{ height: '100%' }}>
           <Toolbar sx={{ 
             justifyContent: 'space-between', 
@@ -474,12 +482,11 @@ const Navbar = () => {
                 src={myLogo}
                 alt="Ghadir Project Logo"
                 sx={{ 
-                  height: 40, 
-                  width: 40,
+                  height: 45, 
+                  width: 45,
                   borderRadius: '50%',
                   objectFit: 'cover',
                   transition: 'transform 0.3s ease',
-                  border: '2px solid rgba(255, 255, 255, 0.1)',
                 }}
               />
 
@@ -491,7 +498,7 @@ const Navbar = () => {
                     fontWeight: 700,
                     lineHeight: 1.1,
                     letterSpacing: '0.5px',
-                    fontSize: '1rem',
+                    fontSize: '1.3rem',
                   }}
                 >
                   Shia Library
@@ -516,7 +523,7 @@ const Navbar = () => {
                 flex: 1, 
                 maxWidth: 400,
                 mx: 2,
-                ml: 15,
+                ml: 14,
                 position: 'relative',
                 zIndex: theme.zIndex.appBar + 1,
                 height: '100%',
@@ -1033,42 +1040,67 @@ const Navbar = () => {
           }
         }}
       >
-        <Box sx={{ width: 280, p: 2 }}>
-          <Box 
-            onClick={handleLogoClick}
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 2,
-              mb: 4,
-              mt: 2,
-              cursor: 'pointer',
-            }}
-          >
-            <Box
-              component="img"
-              src={myLogo}
-              alt="Ghadir Project Logo"
-              sx={{ 
-                height: 50, 
-                width: 50,
-                borderRadius: '50%',
-                objectFit: 'cover',
-                border: '2px solid rgba(255, 255, 255, 0.1)',
-              }}
-            />
-            <Box>
-              <Typography variant="h6" sx={{ color: '#ffffff', fontWeight: 700 }}>
-                Shia Library
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                Ghadir Project
-              </Typography>
-            </Box>
-          </Box>
-          
-          <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.1)', mb: 2 }} />
-          
+       <Box sx={{ width: 320, p: 3.5 }}>
+  <Box 
+    onClick={handleLogoClick}
+    sx={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: 3.5,
+      mb: 5,
+      mt: 3,
+      cursor: 'pointer',
+      p: 1.5,
+      borderRadius: 3,
+      '&:hover': {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      }
+    }}
+  >
+    <Box
+      component="img"
+      src={myLogo}
+      alt="Ghadir Project Logo"
+      sx={{ 
+        height: 70, // Even larger logo
+        width: 70,
+        borderRadius: '50%',
+        objectFit: 'cover',
+        border: '4px solid rgba(255, 255, 255, 0.2)',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+      }}
+    />
+    <Box>
+      <Typography 
+        variant="h4" // Using h4 for very large text
+        sx={{ 
+          color: '#ffffff', 
+          fontWeight: 800,
+          fontSize: '1.6rem',
+          letterSpacing: '0.5px'
+        }}
+      >
+        Shia Library
+      </Typography>
+      <Typography 
+        variant="subtitle1"
+        sx={{ 
+          color: 'rgba(255, 255, 255, 0.8)',
+          fontSize: '1.1rem',
+          fontWeight: 500
+        }}
+      >
+        Ghadir Project
+      </Typography>
+    </Box>
+  </Box>
+  
+  <Divider sx={{ 
+    borderColor: 'rgba(255, 255, 255, 0.15)', 
+    mb: 4,
+    mt: 1,
+    borderWidth: 2
+  }} />
           <List>
             {navLinks.map((link) => (
               <ListItem key={link.text} disablePadding>

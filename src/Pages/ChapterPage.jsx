@@ -55,6 +55,7 @@ export default function ChapterPage() {
   const [feedback, setFeedback] = useState({ name: "", email: "", comments: "" });
   const [bookmarks, setBookmarks] = useState([]);
   const [expandedArabic, setExpandedArabic] = useState({});
+  
 
   // Check scroll position for back to top button
   useEffect(() => {
@@ -125,6 +126,7 @@ useEffect(() => {
 
   handleScrollToHadith();
 }, [hadiths, chapterId]);
+  
   // Fetch hadiths for this chapter
   useEffect(() => {
     const fetchHadiths = async () => {
@@ -177,52 +179,56 @@ useEffect(() => {
     fetchHadiths();
   }, [chapterId]);
 
-  // Fetch all chapters of this book for navigation - FIXED VERSION
- // Fetch all chapters of this book for navigation - IMPROVED VERSION (like BookPage.jsx)
-// Fetch all chapters of this book for navigation - CORRECTED FOR YOUR SCHEMA
-// Fetch all chapters of this book for navigation - WORKING VERSION
-useEffect(() => {
-  const fetchChapters = async () => {
-    try {
-      // 1. Fetch all chapters for the specific book 
-      // via the volume relationship
-      const { data: volumesData } = await supabase
-        .from("volumes")
-        .select("id")
-        .eq("book_id", bookId);
+  // Fetch all chapters of this book for navigation - WORKING VERSION
+  useEffect(() => {
+    const fetchChapters = async () => {
+      try {
+        // 1. Fetch all chapters for the specific book 
+        // via the volume relationship
+        const { data: volumesData } = await supabase
+          .from("volumes")
+          .select("id")
+          .eq("book_id", bookId);
 
-      if (!volumesData) return;
-      const volumeIds = volumesData.map(v => v.id);
+        if (!volumesData) return;
+        const volumeIds = volumesData.map(v => v.id);
 
-      // 2. Fetch chapters using ONLY the columns in your schema
-      const { data: chapterList, error } = await supabase
-        .from("chapters")
-        .select("id, chapter_number, title_en, title_ar") // Matching your exact schema
-        .in("volume_id", volumeIds)
-        .order("chapter_number", { ascending: true });
+        // 2. Fetch chapters using ONLY the columns in your schema
+        const { data: chapterList, error } = await supabase
+          .from("chapters")
+          .select("id, chapter_number, title_en, title_ar") // Matching your exact schema
+          .in("volume_id", volumeIds)
+          .order("chapter_number", { ascending: true });
 
-      if (error) {
-        console.error("Fetch error:", error.message);
-        return;
+        if (error) {
+          console.error("Fetch error:", error.message);
+          return;
+        }
+
+        // 3. Sync the state
+        setChapters(chapterList);
+        
+        // Find where we are in the list
+        const index = chapterList.findIndex((c) => String(c.id) === String(chapterId));
+        setCurrentIndex(index);
+        setCurrentChapter(chapterList[index]);
+
+      } catch (err) {
+        console.error("System Error:", err);
       }
+    };
 
-      // 3. Sync the state
-      setChapters(chapterList);
-      
-      // Find where we are in the list
-      const index = chapterList.findIndex((c) => String(c.id) === String(chapterId));
-      setCurrentIndex(index);
-      setCurrentChapter(chapterList[index]);
-
-    } catch (err) {
-      console.error("System Error:", err);
+    if (bookId && chapterId) {
+      fetchChapters();
     }
-  };
+  }, [bookId, chapterId]);
 
-  if (bookId && chapterId) {
-    fetchChapters();
-  }
-}, [bookId, chapterId]);
+  // Add this after your chapters useEffect
+useEffect(() => {
+  console.log('Current Chapter Data:', currentChapter);
+  console.log('Chapter ID from URL:', chapterId);
+  console.log('All chapters:', chapters);
+}, [currentChapter, chapterId, chapters]);
 
   const prevChapter = currentIndex > 0 ? chapters[currentIndex - 1] : null;
   const nextChapter =
@@ -234,48 +240,50 @@ useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-const getChapterTitle = (chapter) => {
-  if (!chapter) return "";
-  // Try English title first, then Arabic, then just chapter number
-  return chapter.title_en || `Chapter ${chapter.chapter_number}`;
-};
+  const getChapterTitle = (chapter) => {
+    if (!chapter) return "";
+    // Try English title first, then Arabic, then just chapter number
+    return chapter.title_en || `Chapter ${chapter.chapter_number}`;
+  };
+  
   // Copy hadith to clipboard in the specified format
-const copyHadithFormatted = (hadith) => {
-  // Get the correct URL with full path
-  const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}`;
-  
-  // Get book name
-  const bookName = book?.title || book?.english_title || "Unknown Book";
-  
-  // Build reference line - check what reference data we have
-  let referenceLine = "";
-  if (hadith.hadith_reference?.reference) {
-    referenceLine = hadith.hadith_reference.reference;
-  } else {
-    // If no reference in database, use book and chapter number
-    referenceLine = `${bookName}, Chapter ${currentChapter?.chapter_number || "?"}`;
-  }
-  
-  // Format exactly like your example
-  const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}\n${hadithUrl}`;
-  
-  navigator.clipboard.writeText(formattedText)
-    .then(() => {
-      setSnackbar({
-        open: true,
-        message: "Hadith Text Copied To Clipboard",
-        severity: "success"
+  const copyHadithFormatted = (hadith) => {
+    // Get the correct URL with full path
+    const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}`;
+    
+    // Get book name
+    const bookName = book?.title || book?.english_title || "Unknown Book";
+    
+    // Build reference line - check what reference data we have
+    let referenceLine = "";
+    if (hadith.hadith_reference?.reference) {
+      referenceLine = hadith.hadith_reference.reference;
+    } else {
+      // If no reference in database, use book and chapter number
+      referenceLine = `${bookName}, Chapter ${currentChapter?.chapter_number || "?"}`;
+    }
+    
+    // Format exactly like your example
+    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}\n${hadithUrl}`;
+    
+    navigator.clipboard.writeText(formattedText)
+      .then(() => {
+        setSnackbar({
+          open: true,
+          message: "Hadith Text Copied To Clipboard",
+          severity: "success"
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to copy: ", err);
+        setSnackbar({
+          open: true,
+          message: "Failed to copy hadith",
+          severity: "error"
+        });
       });
-    })
-    .catch((err) => {
-      console.error("Failed to copy: ", err);
-      setSnackbar({
-        open: true,
-        message: "Failed to copy hadith",
-        severity: "error"
-      });
-    });
-};
+  };
+  
   // Bookmark functionality
   const toggleBookmark = (hadithId) => {
     const savedBookmarks = JSON.parse(localStorage.getItem("hadithBookmarks") || "[]");
@@ -324,42 +332,54 @@ const copyHadithFormatted = (hadith) => {
     setFeedbackDialog({ open: false, hadith: null });
   };
 
-  const handleFeedbackSubmit = async () => {
-    if (!feedback.comments.trim()) {
-      setSnackbar({
-        open: true,
-        message: "Please provide comments about the issue",
-        severity: "warning"
-      });
-      return;
-    }
+const handleFeedbackSubmit = async () => {
+  if (!feedback.comments.trim()) {
+    setSnackbar({
+      open: true,
+      message: "Please enter comments",
+      severity: "warning",
+    });
+    return;
+  }
 
-    try {
-      // Here you would typically send feedback to your backend
-      // Example: await supabase.from('feedback').insert({...})
-      console.log("Feedback submitted:", {
-        hadithId: feedbackDialog.hadith?.id,
-        hadithNumber: feedbackDialog.hadith?.hadith_number,
-        ...feedback
-      });
+  try {
+    const { error } = await supabase.functions.invoke("send-feedback", {
+      body: {
+        feedback,
+        hadith: feedbackDialog.hadith,
+        book,
+        chapter: currentChapter,
+        pageUrl: window.location.href,
+      },
+    });
 
-      setSnackbar({
-        open: true,
-        message: "Thank you for reporting this issue! We'll review it shortly.",
-        severity: "success"
-      });
-      
-      // Reset and close
-      handleFeedbackClose();
-    } catch (error) {
-      console.error("Feedback submission error:", error);
-      setSnackbar({
-        open: true,
-        message: "Failed to submit feedback. Please try again.",
-        severity: "error"
-      });
-    }
-  };
+    if (error) throw error;
+
+    setSnackbar({
+      open: true,
+      message: "Feedback sent successfully 🙏",
+      severity: "success",
+    });
+
+    handleFeedbackClose();
+
+  } catch (err) {
+  console.error("Feedback error FULL:", err);
+  console.error("Context:", err?.context);
+
+  setSnackbar({
+    open: true,
+    message:
+      err?.context?.body ||
+      err?.message ||
+      "Failed to send feedback",
+    severity: "error",
+  });
+}
+
+
+};
+
 
   const handleSnackbarClose = () => {
     setSnackbar({ ...snackbar, open: false });
@@ -371,114 +391,121 @@ const copyHadithFormatted = (hadith) => {
       
       <Container sx={{ mt: "100px", mb: 8, maxWidth: "lg" }}>
         {/* Breadcrumb Navigation */}
-        <Breadcrumbs sx={{ mb: 4 }}>
-          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <HomeIcon fontSize="small" />
-              <Typography>Home</Typography>
-            </Stack>
-          </Link>
-          <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <BookIcon fontSize="small" />
-              <Typography>{book?.title || "Book"}</Typography>
-            </Stack>
-          </Link>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <MenuBookIcon fontSize="small" color="primary" />
-            <Typography color="primary.main" fontWeight="medium">
-              Chapter {currentChapter?.chapter_number || "" }
+<Breadcrumbs sx={{ mb: 4 }}>
+  <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+    <Typography variant="body2">Home</Typography>
+  </Link>
+  <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
+    <Typography variant="body2">{book?.title || "Book"}</Typography>
+  </Link>
+  <Typography 
+    color="primary.main" 
+    fontWeight="medium" 
+    variant="body2"
+    sx={{
+      maxWidth: '300px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {/* Format: "Chapter Name (Chapter X)" */}
+    {(() => {
+      const chapterName = currentChapter?.title_en || currentChapter?.title_ar;
+      const chapterNum = currentChapter?.chapter_number;
+      
+      if (chapterName && chapterNum) {
+        return `${chapterName} (Ch. ${chapterNum})`;
+      } else if (chapterName) {
+        return chapterName;
+      } else if (chapterNum) {
+        return `Chapter ${chapterNum}`;
+      }
+      return "Chapter";
+    })()}
+  </Typography>
+</Breadcrumbs>
+
+        {/* Chapter Header with Integrated Navigation */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          mb: 4,
+          gap: 2
+        }}>
+          {/* Left Navigation Button */}
+          <Tooltip title={prevChapter ? `Previous Chapter (${prevChapter.chapter_number})` : "First Chapter"}>
+            <span>
+              <IconButton
+                onClick={() => prevChapter && navigate(`/book/${bookId}/chapter/${prevChapter.id}`)}
+                disabled={!prevChapter}
+                sx={{
+                  width: 56,
+                  height: 56,
+                  backgroundColor: "primary.light",
+                  "&:hover": {
+                    backgroundColor: "primary.main",
+                    color: "white",
+                  },
+                  "&.Mui-disabled": {
+                    backgroundColor: "grey.100",
+                    color: "grey.400",
+                  }
+                }}
+              >
+                <ArrowBackIosNewIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+
+          {/* Centered Chapter Info */}
+          <Box sx={{ 
+            flex: 1, 
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }}>
+            <Typography variant="h4" fontWeight="bold" color="primary.dark" gutterBottom>
+              {getChapterTitle(currentChapter)}
             </Typography>
-          </Stack>
-        </Breadcrumbs>
 
+            
+            {/* Hadith Count */}
+            {hadiths.length > 0 && !loading && (
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                {hadiths.length} Hadith{hadiths.length !== 1 ? "s" : ""}
+              </Typography>
+            )}
+          </Box>
 
-
-{/* Chapter Header with Integrated Navigation */}
-<Box sx={{ 
-  display: 'flex', 
-  alignItems: 'center', 
-  justifyContent: 'space-between',
-  mb: 4,
-  gap: 2
-}}>
-  {/* Left Navigation Button */}
-  <Tooltip title={prevChapter ? `Previous Chapter (${prevChapter.chapter_number})` : "First Chapter"}>
-    <span>
-      <IconButton
-        onClick={() => prevChapter && navigate(`/book/${bookId}/chapter/${prevChapter.id}`)}
-        disabled={!prevChapter}
-        sx={{
-          width: 56,
-          height: 56,
-          backgroundColor: "primary.light",
-          "&:hover": {
-            backgroundColor: "primary.main",
-            color: "white",
-          },
-          "&.Mui-disabled": {
-            backgroundColor: "grey.100",
-            color: "grey.400",
-          }
-        }}
-      >
-        <ArrowBackIosNewIcon />
-      </IconButton>
-    </span>
-  </Tooltip>
-
-  {/* Centered Chapter Info */}
-{/* Centered Chapter Info */}
-<Box sx={{ 
-  flex: 1, 
-  textAlign: 'center',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center'
-}}>
-  <Typography variant="h4" fontWeight="bold" color="primary.dark" gutterBottom>
-    {getChapterTitle(currentChapter)}
-  </Typography>
-
-  
-  {/* Chapter Number and Count - FIXED to use chapter_number */}
-  <Typography variant="body1" color="text.secondary">
-    Chapter {currentChapter?.chapter_number || "Loading..."} • {currentIndex >= 0 ? currentIndex + 1 : "?"} of {chapters.length}
-  </Typography>
-  
-  {/* Hadith Count */}
-  {hadiths.length > 0 && !loading && (
-    <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-      {hadiths.length} Hadith{hadiths.length !== 1 ? "s" : ""}
-    </Typography>
-  )}
-</Box>
-
-  {/* Right Navigation Button */}
-  <Tooltip title={nextChapter ? `Next Chapter (${nextChapter.chapter_number})` : "Last Chapter"}>
-    <span>
-      <IconButton
-        onClick={() => nextChapter && navigate(`/book/${bookId}/chapter/${nextChapter.id}`)}
-        disabled={!nextChapter}
-        sx={{
-          width: 56,
-          height: 56,
-          backgroundColor: "primary.light",
-          "&:hover": {
-            backgroundColor: "primary.main",
-            color: "white",
-          },
-          "&.Mui-disabled": {
-            backgroundColor: "grey.100",
-            color: "grey.400",
-          }
-        }}
-      >
-        <ArrowForwardIosIcon />
-      </IconButton>
-    </span>
-  </Tooltip>
-</Box>
+          {/* Right Navigation Button */}
+          <Tooltip title={nextChapter ? `Next Chapter (${nextChapter.chapter_number})` : "Last Chapter"}>
+            <span>
+              <IconButton
+                onClick={() => nextChapter && navigate(`/book/${bookId}/chapter/${nextChapter.id}`)}
+                disabled={!nextChapter}
+                sx={{
+                  width: 56,
+                  height: 56,
+                  backgroundColor: "primary.light",
+                  "&:hover": {
+                    backgroundColor: "primary.main",
+                    color: "white",
+                  },
+                  "&.Mui-disabled": {
+                    backgroundColor: "grey.100",
+                    color: "grey.400",
+                  }
+                }}
+              >
+                <ArrowForwardIosIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+        
         {/* Hadiths List */}
         {loading ? (
           // Skeleton loading
@@ -491,24 +518,24 @@ const copyHadithFormatted = (hadith) => {
           ))
         ) : hadiths.length > 0 ? (
           hadiths.map((h, idx) => (
-<Paper
-  key={h.id || idx}
-  id={`hadith-${h.id}`} // Add this for anchor linking
-  sx={{
-    p: { xs: 2, md: 3 },
-    mb: 4,
-    borderRadius: 3,
-    borderLeft: "4px solid",
-    borderLeftColor: "primary.main",
-    position: "relative",
-    "&:hover": {
-      boxShadow: 4,
-      transform: "translateY(-2px)",
-      transition: "all 0.2s ease",
-    },
-    transition: "all 0.2s ease",
-  }}
->
+            <Paper
+              key={h.id || idx}
+              id={`hadith-${h.id}`} // Add this for anchor linking
+              sx={{
+                p: { xs: 2, md: 3 },
+                mb: 4,
+                borderRadius: 3,
+                borderLeft: "4px solid",
+                borderLeftColor: "primary.main",
+                position: "relative",
+                "&:hover": {
+                  boxShadow: 4,
+                  transform: "translateY(-2px)",
+                  transition: "all 0.2s ease",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
               {/* Action Icons in Top Right */}
               <Box
                 sx={{

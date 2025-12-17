@@ -9,11 +9,9 @@ import { ThemeProvider } from "@mui/material";
 export function Home () {
   return (
     <>
-      <ThemeProvider theme={theme}>
         <Navbar />
         <Hero/>
         <Coffee/>
-      </ThemeProvider>
 
     </>
   )

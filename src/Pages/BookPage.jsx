@@ -21,8 +21,6 @@ import HomeIcon from "@mui/icons-material/Home";
 import KeyboardDoubleArrowUpIcon from "@mui/icons-material/KeyboardDoubleArrowUp";
 import Navbar from "../components/Navbar/Navbar.jsx";
 import { supabase } from "../config/supabaseClient.js";
-import theme from "../assets/theme.js";
-import { ThemeProvider } from "@mui/material";
 
 
 export default function BookPage() {
@@ -139,7 +137,7 @@ export default function BookPage() {
 
   if (loading) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Navbar />
         <Container
           maxWidth="lg"
@@ -174,14 +172,14 @@ export default function BookPage() {
             ))}
           </Paper>
         </Container>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (!book) return <Typography>Book not found</Typography>;
 
   return (
-    <ThemeProvider theme={theme}>
+    <>
       <Navbar />
       <Container
         maxWidth="lg"
@@ -195,12 +193,10 @@ export default function BookPage() {
         <Breadcrumbs sx={{ mb: 4 }}>
           <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
             <Stack direction="row" alignItems="center" spacing={1}>
-              <HomeIcon fontSize="small" />
               <Typography>Home</Typography>
             </Stack>
           </Link>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <MenuBookIcon fontSize="small" color="primary" />
             <Typography color="primary.main" fontWeight="medium">
               {book.title}
             </Typography>
@@ -493,6 +489,6 @@ export default function BookPage() {
           </Fab>
         )}
       </Container>
-    </ThemeProvider>
+    </>
   );
 }

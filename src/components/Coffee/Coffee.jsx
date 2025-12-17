@@ -63,16 +63,6 @@ useEffect(() => {
       <Navbar />
       <Container sx={{ mt: "30px", mb: 8, maxWidth: "lg" }}>
         {/* Breadcrumb Navigation */}
-        <Breadcrumbs sx={{ mb: 4 }}>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <HomeIcon fontSize="small" color="primary" />
-            <Typography color="primary.main" fontWeight="medium">
-              Home
-            </Typography>
-          </Stack>
-        </Breadcrumbs>
-
-
 
         {/* Category Tabs Section */}
         <Paper

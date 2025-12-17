@@ -3,6 +3,8 @@ import { Card, CardContent, CardMedia, Typography, Grid, Box } from '@mui/materi
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar/Navbar.jsx';
 import { supabase } from '../config/supabaseClient.js';
+import { ThemeProvider } from "@mui/material";
+
 
 export default function BooksPage() {
   const [books, setBooks] = useState([]);
@@ -16,7 +18,7 @@ export default function BooksPage() {
   }, []);
 
   return (
-    <>
+    <ThemeProvider theme={theme}>
       <Navbar />
       <Box sx={{ px: 2, py: 4, maxWidth: { xs: '100%', sm: 700, md: 900 }, mx: 'auto' }}>
         <Grid container spacing={3} justifyContent="center">
@@ -51,6 +53,6 @@ export default function BooksPage() {
           ))}
         </Grid>
       </Box>
-    </>
+    </ThemeProvider>
   );
 }
