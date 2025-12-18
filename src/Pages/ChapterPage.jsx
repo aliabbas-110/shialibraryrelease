@@ -376,7 +376,7 @@ export default function ChapterPage() {
     }
     
     // Format the text
-    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}, Hadith ${hadith.hadith_number}\n\n$${hadithUrl}`;
+    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}, Hadith ${hadith.hadith_number}\n${hadithUrl}`;
     
     navigator.clipboard.writeText(formattedText)
       .then(() => {
