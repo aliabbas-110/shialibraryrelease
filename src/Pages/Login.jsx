@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -21,15 +21,14 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login, user } = useAuth(); // Changed from 'signIn' to 'login'
+  const { signIn, user } = useAuth();
   const navigate = useNavigate();
 
   // Redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      navigate('/profile');
-    }
-  }, [user, navigate]);
+  if (user) {
+    navigate('/profile');
+    return null;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,13 +36,11 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const { error: loginError } = await login(email, password); // Changed from 'signIn' to 'login'
-      if (loginError) {
-        setError(loginError);
+      const { error } = await signIn(email, password);
+      if (error) {
+        setError(error);
         return;
       }
-      
-      // Successful login - navigate to profile
       navigate('/profile');
     } catch (err) {
       setError('An unexpected error occurred');
@@ -52,11 +49,6 @@ const Login = () => {
       setLoading(false);
     }
   };
-
-  // Don't render anything if user is already logged in
-  if (user) {
-    return null;
-  }
 
   return (
     <>
@@ -79,46 +71,40 @@ const Login = () => {
           </Box>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
             </Alert>
           )}
 
           <form onSubmit={handleSubmit}>
             <Stack spacing={3}>
-              <TextField
-                fullWidth
-                label="Email Address"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value.trim().toLowerCase())} // Added trim and lowercase
-                required
-                disabled={loading}
-                id="login-email"
-                name="email"
-                autoComplete="email"
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                inputProps={{
-                  maxLength: 255
-                }}
-              />
+<TextField
+  fullWidth
+  label="Email Address"
+  type="email"
+  value={email}
+  onChange={(e) => setEmail(e.target.value)}
+  required
+  disabled={loading}
+  id="login-email" // Add this
+  name="email" // Add this
+  autoComplete="email" // Add this
+  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+/>
 
-              <TextField
-                fullWidth
-                label="Password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-                id="login-password"
-                name="password"
-                autoComplete="current-password"
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                inputProps={{
-                  maxLength: 72
-                }}
-              />
+<TextField
+  fullWidth
+  label="Password"
+  type="password"
+  value={password}
+  onChange={(e) => setPassword(e.target.value)}
+  required
+  disabled={loading}
+  id="login-password" // Add this
+  name="password" // Add this
+  autoComplete="current-password" // Add this
+  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+/>
 
               <Button
                 fullWidth
@@ -132,7 +118,6 @@ const Login = () => {
                   borderRadius: 2,
                   fontWeight: 'bold',
                   fontSize: '1rem',
-                  textTransform: 'none',
                 }}
               >
                 {loading ? 'Signing in...' : 'Sign In'}
@@ -144,7 +129,7 @@ const Login = () => {
             <Typography variant="body2" color="text.secondary">
               Don't have an account?{' '}
               <Link to="/register" style={{ textDecoration: 'none' }}>
-                <Button variant="text" size="small" sx={{ textTransform: 'none' }}>
+                <Button variant="text" size="small">
                   Create Account
                 </Button>
               </Link>
