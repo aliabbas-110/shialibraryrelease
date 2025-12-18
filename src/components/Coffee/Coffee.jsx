@@ -29,10 +29,10 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('Fazail');
 
-useEffect(() => {
-  // Scroll to top when component mounts
-  window.scrollTo(0, 0);
-}, []); // Empty dependency array
+  useEffect(() => {
+    // Scroll to top when component mounts
+    window.scrollTo(0, 0);
+  }, []); // Empty dependency array
   
   useEffect(() => {
     const fetchBooks = async () => {
@@ -40,12 +40,37 @@ useEffect(() => {
       let { data, error } = await supabase
         .from('books')
         .select('*')
-        .order('id', { ascending: true })
+        .order('id', { ascending: true });
 
-      if (error) console.log('Error fetching books:', error)
-      else setBooks(data || []);
+      if (error) {
+        console.log('Error fetching books:', error);
+        setBooks([]);
+        setLoading(false);
+        return;
+      }
+
+      if (data) {
+        // Get volume count for each book
+        const booksWithVolumes = await Promise.all(
+          data.map(async (book) => {
+            const { count } = await supabase
+              .from('volumes')
+              .select('*', { count: 'exact', head: true })
+              .eq('book_id', book.id);
+            
+            return {
+              ...book,
+              volume_count: count || 0
+            };
+          })
+        );
+        setBooks(booksWithVolumes);
+      } else {
+        setBooks([]);
+      }
+      
       setLoading(false);
-    }
+    };
 
     fetchBooks();
   }, []);
@@ -161,6 +186,7 @@ useEffect(() => {
                       <Box sx={{ flex: 1 }}>
                         <Skeleton variant="text" height={32} width="80%" />
                         <Skeleton variant="text" height={24} width="60%" sx={{ mt: 1 }} />
+                        <Skeleton variant="text" width={80} height={16} sx={{ mt: 1, mb: 1 }} />
                         <Skeleton variant="text" height={20} width="40%" sx={{ mt: 2 }} />
                       </Box>
                     </Stack>
@@ -258,6 +284,21 @@ useEffect(() => {
                             }}
                           >
                             {book.english_title}
+                          </Typography>
+                        )}
+
+                        {/* Volume count in parentheses above author */}
+                        {book.volume_count > 1 && (
+                          <Typography 
+                            variant="caption" 
+                            color="text.secondary"
+                            sx={{ 
+                              mb: 1,
+                              fontWeight: 500,
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            ({book.volume_count} volume{book.volume_count > 1 ? 's' : ''})
                           </Typography>
                         )}
 
