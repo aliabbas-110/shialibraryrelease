@@ -376,7 +376,7 @@ export default function ChapterPage() {
     }
     
     // Format the text
-    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}\n${hadithUrl}`;
+    const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}, Hadith ${hadith.hadith_number}\n${hadithUrl}`;
     
     navigator.clipboard.writeText(formattedText)
       .then(() => {
@@ -647,6 +647,7 @@ export default function ChapterPage() {
                   <IconButton
                     size="small"
                     onClick={() => copyHadithFormatted(h)}
+                    
                     sx={{
                       "&:hover": {
                         color: "primary.main",
@@ -715,18 +716,7 @@ export default function ChapterPage() {
                   color="primary"
                   variant="outlined"
                 />
-                <Chip
-                  label={`Chapter ${currentChapter?.chapter_number || "?"}`}
-                  color="secondary"
-                  variant="outlined"
-                  size="small"
-                />
-                <Chip
-                  label={getBookTitle()}
-                  color="default"
-                  variant="outlined"
-                  size="small"
-                />
+
                 <Divider orientation="vertical" flexItem />
                 <Typography variant="caption" color="text.secondary">
                   #{idx + 1}
