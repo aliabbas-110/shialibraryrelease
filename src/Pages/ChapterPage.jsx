@@ -38,6 +38,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import { ThemeProvider } from "@mui/material";
 import theme from "../assets/theme.js";
 import { supabase } from "../config/supabaseClient.js";
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ChapterPage() {
   const { bookId, chapterId } = useParams();
@@ -53,9 +54,11 @@ export default function ChapterPage() {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
   const [feedbackDialog, setFeedbackDialog] = useState({ open: false, hadith: null });
   const [feedback, setFeedback] = useState({ name: "", email: "", comments: "" });
-  const [bookmarks, setBookmarks] = useState([]);
   const [expandedArabic, setExpandedArabic] = useState({});
   
+  // Auth context for saving hadiths
+  const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
+  const [savedStates, setSavedStates] = useState({});
 
   // Check scroll position for back to top button
   useEffect(() => {
@@ -84,48 +87,48 @@ export default function ChapterPage() {
     window.scrollTo(0, 0);
   }, [chapterId]);
 
-// Scroll to specific hadith from search
-useEffect(() => {
-  const handleScrollToHadith = () => {
-    const hash = window.location.hash;
-    if (hash && hash.startsWith('#hadith-')) {
-      const hadithId = hash.replace('#hadith-', '');
-      
-      if (hadiths.length > 0) {
-        // Small delay to ensure DOM is ready
-        setTimeout(() => {
-          const element = document.getElementById(`hadith-${hadithId}`);
-          if (element) {
-            // Calculate position considering fixed navbar
-            const navbarHeight = 64;
-            const elementPosition = element.getBoundingClientRect().top;
-            const offsetPosition = elementPosition + window.pageYOffset - navbarHeight - 20;
-            
-            window.scrollTo({
-              top: offsetPosition,
-              behavior: 'smooth'
-            });
-            
-            // Add highlight effect
-            element.style.transition = 'background-color 0.5s ease';
-            element.style.backgroundColor = 'rgba(255, 255, 100, 0.15)';
-            element.style.borderRadius = '8px';
-            element.style.padding = '4px';
-            element.style.margin = '-4px';
-            
-            setTimeout(() => {
-              element.style.backgroundColor = '';
-              element.style.padding = '';
-              element.style.margin = '';
-            }, 2000);
-          }
-        }, 300);
+  // Scroll to specific hadith from search
+  useEffect(() => {
+    const handleScrollToHadith = () => {
+      const hash = window.location.hash;
+      if (hash && hash.startsWith('#hadith-')) {
+        const hadithId = hash.replace('#hadith-', '');
+        
+        if (hadiths.length > 0) {
+          // Small delay to ensure DOM is ready
+          setTimeout(() => {
+            const element = document.getElementById(`hadith-${hadithId}`);
+            if (element) {
+              // Calculate position considering fixed navbar
+              const navbarHeight = 64;
+              const elementPosition = element.getBoundingClientRect().top;
+              const offsetPosition = elementPosition + window.pageYOffset - navbarHeight - 20;
+              
+              window.scrollTo({
+                top: offsetPosition,
+                behavior: 'smooth'
+              });
+              
+              // Add highlight effect
+              element.style.transition = 'background-color 0.5s ease';
+              element.style.backgroundColor = 'rgba(255, 255, 100, 0.15)';
+              element.style.borderRadius = '8px';
+              element.style.padding = '4px';
+              element.style.margin = '-4px';
+              
+              setTimeout(() => {
+                element.style.backgroundColor = '';
+                element.style.padding = '';
+                element.style.margin = '';
+              }, 2000);
+            }
+          }, 300);
+        }
       }
-    }
-  };
+    };
 
-  handleScrollToHadith();
-}, [hadiths, chapterId]);
+    handleScrollToHadith();
+  }, [hadiths, chapterId]);
   
   // Fetch hadiths for this chapter
   useEffect(() => {
@@ -179,7 +182,22 @@ useEffect(() => {
     fetchHadiths();
   }, [chapterId]);
 
-  // Fetch all chapters of this book for navigation - WORKING VERSION
+  // Check saved status for all hadiths when user or hadiths change
+  useEffect(() => {
+    const checkAllSavedStatus = async () => {
+      if (!user || hadiths.length === 0) return;
+      
+      const newSavedStates = {};
+      for (const hadith of hadiths) {
+        newSavedStates[hadith.id] = await isHadithSaved(hadith.id);
+      }
+      setSavedStates(newSavedStates);
+    };
+    
+    checkAllSavedStatus();
+  }, [hadiths, user, isHadithSaved]);
+
+  // Fetch all chapters of this book for navigation
   useEffect(() => {
     const fetchChapters = async () => {
       try {
@@ -196,7 +214,7 @@ useEffect(() => {
         // 2. Fetch chapters using ONLY the columns in your schema
         const { data: chapterList, error } = await supabase
           .from("chapters")
-          .select("id, chapter_number, title_en, title_ar") // Matching your exact schema
+          .select("id, chapter_number, title_en, title_ar")
           .in("volume_id", volumeIds)
           .order("chapter_number", { ascending: true });
 
@@ -223,12 +241,50 @@ useEffect(() => {
     }
   }, [bookId, chapterId]);
 
-  // Add this after your chapters useEffect
-useEffect(() => {
-  console.log('Current Chapter Data:', currentChapter);
-  console.log('Chapter ID from URL:', chapterId);
-  console.log('All chapters:', chapters);
-}, [currentChapter, chapterId, chapters]);
+  // Save/Unsave hadith function
+  const handleSaveHadith = async (hadithId) => {
+    if (!user) {
+      setSnackbar({
+        open: true,
+        message: "Please login to save hadiths",
+        severity: "warning"
+      });
+      return;
+    }
+    
+    try {
+      if (savedStates[hadithId]) {
+        // Already saved, so unsave it
+        const { error } = await removeSavedHadith(hadithId);
+        if (error) throw new Error(error);
+        
+        setSavedStates(prev => ({ ...prev, [hadithId]: false }));
+        setSnackbar({
+          open: true,
+          message: "Hadith removed from saved",
+          severity: "info"
+        });
+      } else {
+        // Not saved, so save it
+        const { data, error } = await saveHadith(hadithId);
+        if (error) throw new Error(error);
+        
+        setSavedStates(prev => ({ ...prev, [hadithId]: true }));
+        setSnackbar({
+          open: true,
+          message: "Hadith saved successfully!",
+          severity: "success"
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling save:', error);
+      setSnackbar({
+        open: true,
+        message: error.message || 'An error occurred',
+        severity: 'error'
+      });
+    }
+  };
 
   const prevChapter = currentIndex > 0 ? chapters[currentIndex - 1] : null;
   const nextChapter =
@@ -283,25 +339,6 @@ useEffect(() => {
         });
       });
   };
-  
-  // Bookmark functionality
-  const toggleBookmark = (hadithId) => {
-    const savedBookmarks = JSON.parse(localStorage.getItem("hadithBookmarks") || "[]");
-    const newBookmarks = savedBookmarks.includes(hadithId)
-      ? savedBookmarks.filter(id => id !== hadithId)
-      : [...savedBookmarks, hadithId];
-    
-    setBookmarks(newBookmarks);
-    localStorage.setItem("hadithBookmarks", JSON.stringify(newBookmarks));
-    
-    setSnackbar({
-      open: true,
-      message: savedBookmarks.includes(hadithId) 
-        ? "Hadith removed from bookmarks" 
-        : "Hadith added to bookmarks",
-      severity: "success"
-    });
-  };
 
   // Toggle expanded state for Arabic text only
   const toggleArabicExpand = (hadithId) => {
@@ -332,54 +369,51 @@ useEffect(() => {
     setFeedbackDialog({ open: false, hadith: null });
   };
 
-const handleFeedbackSubmit = async () => {
-  if (!feedback.comments.trim()) {
-    setSnackbar({
-      open: true,
-      message: "Please enter comments",
-      severity: "warning",
-    });
-    return;
-  }
+  const handleFeedbackSubmit = async () => {
+    if (!feedback.comments.trim()) {
+      setSnackbar({
+        open: true,
+        message: "Please enter comments",
+        severity: "warning",
+      });
+      return;
+    }
 
-  try {
-    const { error } = await supabase.functions.invoke("send-feedback", {
-      body: {
-        feedback,
-        hadith: feedbackDialog.hadith,
-        book,
-        chapter: currentChapter,
-        pageUrl: window.location.href,
-      },
-    });
+    try {
+      const { error } = await supabase.functions.invoke("send-feedback", {
+        body: {
+          feedback,
+          hadith: feedbackDialog.hadith,
+          book,
+          chapter: currentChapter,
+          pageUrl: window.location.href,
+        },
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setSnackbar({
-      open: true,
-      message: "Feedback sent successfully 🙏",
-      severity: "success",
-    });
+      setSnackbar({
+        open: true,
+        message: "Feedback sent successfully 🙏",
+        severity: "success",
+      });
 
-    handleFeedbackClose();
+      handleFeedbackClose();
 
-  } catch (err) {
-  console.error("Feedback error FULL:", err);
-  console.error("Context:", err?.context);
+    } catch (err) {
+      console.error("Feedback error FULL:", err);
+      console.error("Context:", err?.context);
 
-  setSnackbar({
-    open: true,
-    message:
-      err?.context?.body ||
-      err?.message ||
-      "Failed to send feedback",
-    severity: "error",
-  });
-}
-
-
-};
-
+      setSnackbar({
+        open: true,
+        message:
+          err?.context?.body ||
+          err?.message ||
+          "Failed to send feedback",
+        severity: "error",
+      });
+    }
+  };
 
   const handleSnackbarClose = () => {
     setSnackbar({ ...snackbar, open: false });
@@ -391,40 +425,40 @@ const handleFeedbackSubmit = async () => {
       
       <Container sx={{ mt: "100px", mb: 8, maxWidth: "lg" }}>
         {/* Breadcrumb Navigation */}
-<Breadcrumbs sx={{ mb: 4 }}>
-  <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-    <Typography variant="body1">Home</Typography>
-  </Link>
-  <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
-    <Typography variant="body1">{book?.title || "Book"}</Typography>
-  </Link>
-  <Typography 
-    color="primary.main" 
-    fontWeight="medium" 
-    variant="body1"
-    sx={{
-      maxWidth: '300px',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {/* Format: "Chapter Name (Chapter X)" */}
-    {(() => {
-      const chapterName = currentChapter?.title_en || currentChapter?.title_ar;
-      const chapterNum = currentChapter?.chapter_number;
-      
-      if (chapterName && chapterNum) {
-        return `${chapterName} (Ch. ${chapterNum})`;
-      } else if (chapterName) {
-        return chapterName;
-      } else if (chapterNum) {
-        return `Chapter ${chapterNum}`;
-      }
-      return "Chapter";
-    })()}
-  </Typography>
-</Breadcrumbs>
+        <Breadcrumbs sx={{ mb: 4 }}>
+          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+            <Typography variant="body1">Home</Typography>
+          </Link>
+          <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
+            <Typography variant="body1">{book?.title || "Book"}</Typography>
+          </Link>
+          <Typography 
+            color="primary.main" 
+            fontWeight="medium" 
+            variant="body1"
+            sx={{
+              maxWidth: '300px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {/* Format: "Chapter Name (Chapter X)" */}
+            {(() => {
+              const chapterName = currentChapter?.title_en || currentChapter?.title_ar;
+              const chapterNum = currentChapter?.chapter_number;
+              
+              if (chapterName && chapterNum) {
+                return `${chapterName} (Ch. ${chapterNum})`;
+              } else if (chapterName) {
+                return chapterName;
+              } else if (chapterNum) {
+                return `Chapter ${chapterNum}`;
+              }
+              return "Chapter";
+            })()}
+          </Typography>
+        </Breadcrumbs>
 
         {/* Chapter Header with Integrated Navigation */}
         <Box sx={{ 
@@ -520,7 +554,7 @@ const handleFeedbackSubmit = async () => {
           hadiths.map((h, idx) => (
             <Paper
               key={h.id || idx}
-              id={`hadith-${h.id}`} // Add this for anchor linking
+              id={`hadith-${h.id}`}
               sx={{
                 p: { xs: 2, md: 3 },
                 mb: 4,
@@ -567,19 +601,19 @@ const handleFeedbackSubmit = async () => {
                   </IconButton>
                 </Tooltip>
 
-                {/* Bookmark Button */}
-                <Tooltip title={bookmarks.includes(h.id) ? "Remove Bookmark" : "Bookmark Hadith"}>
+                {/* Save Button - Using Auth Context */}
+                <Tooltip title={savedStates[h.id] ? "Remove from saved" : "Save hadith"}>
                   <IconButton
                     size="small"
-                    onClick={() => toggleBookmark(h.id)}
+                    onClick={() => handleSaveHadith(h.id)}
                     sx={{
                       "&:hover": {
-                        color: "warning.main",
+                        color: savedStates[h.id] ? "error.main" : "warning.main",
                       },
                     }}
                   >
-                    {bookmarks.includes(h.id) ? (
-                      <BookmarkIcon fontSize="small" color="warning" />
+                    {savedStates[h.id] ? (
+                      <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
                     ) : (
                       <BookmarkBorderIcon fontSize="small" />
                     )}
@@ -600,6 +634,22 @@ const handleFeedbackSubmit = async () => {
                     <FeedbackIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
+              </Box>
+
+              {/* Save Status Indicator */}
+              <Box sx={{ mb: 1, ml: -1 }}>
+                {savedStates[h.id] && (
+                  <Chip
+                    label="Saved"
+                    size="small"
+                    sx={{
+                      backgroundColor: "warning.light",
+                      color: "warning.contrastText",
+                      fontSize: "0.7rem",
+                      height: 20,
+                    }}
+                  />
+                )}
               </Box>
 
               {/* Hadith Header */}
@@ -708,6 +758,23 @@ const handleFeedbackSubmit = async () => {
                   </Typography>
                 </Box>
               )}
+
+              {/* Login Prompt for non-logged in users */}
+              {!user && (
+                <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+                  <Typography variant="body2" color="text.secondary" align="center">
+                    Want to save this hadith?{' '}
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => navigate('/login')}
+                      sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                    >
+                      Login or Sign Up
+                    </Button>
+                  </Typography>
+                </Box>
+              )}
             </Paper>
           ))
         ) : (
@@ -724,7 +791,7 @@ const handleFeedbackSubmit = async () => {
               No hadiths found for this chapter
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              This chapter doesnt contain any hadiths yet.
+              This chapter doesn't contain any hadiths yet.
             </Typography>
           </Paper>
         )}

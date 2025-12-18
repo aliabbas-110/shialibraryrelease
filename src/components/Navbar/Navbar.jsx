@@ -37,6 +37,10 @@ import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import { supabase } from '../../config/supabaseClient.js';
+import { useAuth } from '../../contexts/AuthContext';
+import PersonIcon from '@mui/icons-material/Person';
+import LoginIcon from '@mui/icons-material/Login';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 const Navbar = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -44,21 +48,18 @@ const Navbar = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  
+  const { user, signOut } = useAuth();
+
   const theme = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [hoveredLink, setHoveredLink] = useState(null);
 
   // Function to remove Arabic diacritics (tashkeel)
   const removeDiacritics = (text) => {
     if (!text) return '';
     
-    // Remove Arabic diacritics (tashkeel)
     const withoutDiacritics = text.replace(/[\u064B-\u065F\u0670]/g, '');
-    
-    // Also remove additional marks if needed
     const finalText = withoutDiacritics.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
     
     return finalText;
@@ -83,16 +84,12 @@ const Navbar = () => {
   const normalizeArabicQuery = (query) => {
     if (!isArabicQuery(query)) return query;
     
-    // Remove diacritics from query
     const cleanQuery = removeDiacritics(query);
-    
-    // Optional: Handle common variations
-    // Replace common letter variations (like different forms of hamza)
     const normalized = cleanQuery
-      .replace(/[آأإءٱ]/g, 'ا')  // Normalize alif variations
-      .replace(/[ؤ]/g, 'و')      // Normalize waw with hamza
-      .replace(/[ئ]/g, 'ي')      // Normalize ya with hamza
-      .replace(/\s+/g, ' ')      // Normalize spaces
+      .replace(/[آأإءٱ]/g, 'ا')
+      .replace(/[ؤ]/g, 'و')
+      .replace(/[ئ]/g, 'ي')
+      .replace(/\s+/g, ' ')
       .trim();
     
     return normalized;
@@ -111,23 +108,49 @@ const Navbar = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
+  // Click outside handler for search
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const searchContainer = document.querySelector('.search-container');
+      const searchInput = document.querySelector('.search-input');
+      const searchResultsContainer = document.querySelector('.search-results');
+      const searchIconButton = document.querySelector('.search-icon-button');
+      
+      if (searchIconButton && searchIconButton.contains(event.target)) {
+        return;
+      }
+      
+      if (isSearchFocused && 
+          searchContainer && 
+          !searchContainer.contains(event.target) &&
+          searchInput && 
+          !searchInput.contains(event.target) &&
+          (!searchResultsContainer || !searchResultsContainer.contains(event.target))) {
+        setIsSearchFocused(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isSearchFocused]);
+  
   // Main search function
   const performSearch = async (query) => {
     setIsSearching(true);
     try {
       let data = null;
-      let error = null;
 
-      // Check if query contains Arabic
       if (isArabicQuery(query)) {
-        // For Arabic queries, use a more comprehensive search
         data = await searchArabicHadith(query);
       } else {
-        // For English queries, use the original search
         data = await searchEnglishHadith(query);
       }
 
-      // Format results to match expected structure
       const formattedResults = (data || []).map(item => {
         const chapter = item.chapters || {};
         const volume = chapter.volumes || {};
@@ -162,7 +185,6 @@ const Navbar = () => {
   // Search function for English queries
   const searchEnglishHadith = async (query) => {
     try {
-      // Try Full Text Search first
       const { data, error } = await supabase
         .from('hadith')
         .select(`
@@ -185,7 +207,7 @@ const Navbar = () => {
             )
           )
         `)
-        .or(`search_vector.phfts.${query}`) // Full text search
+        .or(`search_vector.phfts.${query}`)
         .order('id', { ascending: true })
         .limit(25);
 
@@ -194,7 +216,6 @@ const Navbar = () => {
 
     } catch (ftsError) {
       console.warn('FTS failed, trying fallback:', ftsError.message);
-      // Fallback to ILIKE search
       return await searchEnglishFallback(query);
     }
   };
@@ -235,7 +256,6 @@ const Navbar = () => {
     const normalizedQuery = normalizeArabicQuery(query);
     
     try {
-      // First, try to use PostgreSQL unaccent extension if available
       const { data: ftsData, error: ftsError } = await supabase
         .from('hadith')
         .select(`
@@ -258,22 +278,19 @@ const Navbar = () => {
             )
           )
         `)
-        .or(`arabic.ilike.%${query}%`) // Direct match with diacritics
+        .or(`arabic.ilike.%${query}%`)
         .limit(25);
 
       if (ftsError) throw ftsError;
 
-      // If we found results with direct match, return them
       if (ftsData && ftsData.length > 0) {
         return ftsData;
       }
 
-      // If no direct matches, search without diacritics
       return await searchArabicWithoutDiacritics(normalizedQuery);
 
     } catch (error) {
       console.warn('Arabic search failed:', error);
-      // Fallback to diacritic-insensitive search
       return await searchArabicWithoutDiacritics(normalizedQuery);
     }
   };
@@ -281,7 +298,6 @@ const Navbar = () => {
   // Search Arabic without diacritics
   const searchArabicWithoutDiacritics = async (normalizedQuery) => {
     try {
-      // Option 1: Use PostgreSQL function to remove diacritics (if available)
       const { data: rpcData, error: rpcError } = await supabase.rpc(
         'search_arabic_without_diacritics',
         { search_query: normalizedQuery }
@@ -291,7 +307,6 @@ const Navbar = () => {
         return rpcData;
       }
 
-      // Option 2: Fallback to client-side filtering with broader database query
       const { data: allData, error: allError } = await supabase
         .from('hadith')
         .select(`
@@ -314,18 +329,16 @@ const Navbar = () => {
             )
           )
         `)
-        .ilike('arabic', '%ا%') // Get all Arabic hadith (filtering will be done client-side)
-        .limit(200); // Increased limit for client-side filtering
+        .ilike('arabic', '%ا%')
+        .limit(200);
 
       if (allError) throw allError;
 
-      // Client-side filtering: remove diacritics and search
       const filteredResults = (allData || []).filter(item => {
         if (!item.arabic) return false;
-        
         const cleanArabic = removeDiacritics(item.arabic);
         return cleanArabic.includes(normalizedQuery);
-      }).slice(0, 25); // Limit to 25 results
+      }).slice(0, 25);
 
       return filteredResults;
 
@@ -346,7 +359,6 @@ const Navbar = () => {
 
   const handleResultClick = (result) => {
     if (result.book_id && result.chapter_id && result.hadith_id) {
-      // Pass hadith_id as hash to scroll to it in the chapter page
       navigate(`/book/${result.book_id}/chapter/${result.chapter_id}#hadith-${result.hadith_id}`);
     } else if (result.book_id && result.chapter_id) {
       navigate(`/book/${result.book_id}/chapter/${result.chapter_id}`);
@@ -356,11 +368,31 @@ const Navbar = () => {
     setIsSearchFocused(false);
   };
 
-  const navLinks = [
-    { text: 'Home', path: '/',  },
-    { text: 'About', path: '/about',  },
-    { text: 'Contact', path: '/contact', },
-  ];
+  // Nav links based on user authentication
+  const getNavLinks = () => {
+    const links = [{ text: 'Home', path: '/', icon: <HomeIcon /> }];
+    
+    if (user) {
+      links.push({ text: 'My Profile', path: '/profile', icon: <PersonIcon /> });
+    }
+    
+    return links;
+  };
+
+  // Menu links for drawer (includes all pages)
+  const getMenuLinks = () => {
+    const links = [
+      { text: 'Home', path: '/', icon: <HomeIcon /> },
+      { text: 'About', path: '/about', icon: <InfoIcon /> },
+      { text: 'Contact', path: '/contact', icon: <ContactMailIcon /> },
+    ];
+    
+    if (user) {
+      links.push({ text: 'My Profile', path: '/profile', icon: <PersonIcon /> });
+    }
+    
+    return links;
+  };
 
   const isActive = (path) => location.pathname === path;
 
@@ -373,13 +405,11 @@ const Navbar = () => {
     return text.substring(0, maxLength) + '...';
   };
 
-  // Helper to highlight search terms (simple version)
+  // Helper to highlight search terms
   const highlightSearchTerm = (text, query) => {
     if (!text || !query) return getTextPreview(text, isMobile ? 80 : 100);
     
-    // For mobile, show shorter preview
     const maxLength = isMobile ? 80 : 100;
-    
     const lowerText = text.toLowerCase();
     const lowerQuery = query.toLowerCase();
     const index = lowerText.indexOf(lowerQuery);
@@ -396,7 +426,7 @@ const Navbar = () => {
     return preview;
   };
 
-  // Highlight Arabic search terms (preserving diacritics in display)
+  // Highlight Arabic search terms
   const highlightArabicTerm = (arabicText, query) => {
     if (!arabicText || !query || !isArabicQuery(query)) {
       return getTextPreview(arabicText, isMobile ? 80 : 100);
@@ -410,8 +440,6 @@ const Navbar = () => {
     
     if (index === -1) return getTextPreview(arabicText, maxLength);
     
-    // Find the corresponding position in the original text (with diacritics)
-    // This is approximate but should work for most cases
     let originalIndex = 0;
     let normalizedIndex = 0;
     
@@ -433,33 +461,40 @@ const Navbar = () => {
     return preview;
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   return (
     <>
-<AppBar 
-  position="fixed"
-  elevation={0}
-  sx={{
-    backgroundColor: 'rgba(0, 0, 0, 0.55)', // Reduced opacity for more transparency
-    backdropFilter: 'blur(7px)', // Increased blur
-    WebkitBackdropFilter: 'blur(12px)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
-    height: 70,
-    transition: 'all 0.3s ease',
-    // Add gradient for better visual effect
-    backgroundImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5))',
-        zIndex: 1300, // Fixed: Use a high z-index (MUI's default is 1100-1200 for AppBar)
-
-    // Ensure it's always on top
-    zIndex: theme.zIndex.appBar,
-  }}
->
-
-        <Container maxWidth="lg" sx={{ height: '100%' }}>
+      <AppBar 
+        position="fixed"
+        elevation={0}
+        sx={{
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(7px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+          height: 70,
+          transition: 'all 0.3s ease',
+          backgroundImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5))',
+          zIndex: 1300,
+        }}
+      >
+        <Container maxWidth="lg" sx={{ 
+          height: '100%',
+          px: { xs: 2, sm: 4, md: 4 }
+        }}>
           <Toolbar sx={{ 
             justifyContent: 'space-between', 
             alignItems: 'center',
             height: '100%',
             py: 0,
+            px: { xs: 0, sm: 0 },
             gap: 2,
             minHeight: '64px !important',
           }}>
@@ -519,27 +554,30 @@ const Navbar = () => {
               </Stack>
             </Box>
 
-            {/* SEARCH BAR - REDUCED WIDTH */}
+            {/* Desktop Search Bar */}
             {!isMobile && (
-              <Box sx={{ 
-                flex: 1, 
-                maxWidth: 400,
-                mx: 2,
-                ml: 12,
-                position: 'relative',
-                zIndex: theme.zIndex.appBar + 1,
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-              }}>
+              <Box 
+                className="search-container"
+                sx={{ 
+                  flex: 1, 
+                  maxWidth: 400,
+                  mx: 2,
+                  ml: 12,
+                  position: 'relative',
+                  zIndex: theme.zIndex.appBar + 1,
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
                 <TextField
+                  className="search-input"
                   fullWidth
                   variant="outlined"
                   placeholder="Search hadith by text (Arabic or English)..."
                   value={searchQuery}
                   onChange={handleSearchChange}
                   onFocus={() => setIsSearchFocused(true)}
-                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
                   size="small"
                   InputProps={{
                     startAdornment: (
@@ -597,10 +635,11 @@ const Navbar = () => {
                   }}
                 />
 
-                {/* SEARCH RESULTS DROPDOWN */}
-                {isSearchFocused && (searchResults.length > 0 || (searchQuery.length >= 2 && isSearching)) && (
+                {/* Desktop Search Results Dropdown */}
+                {isSearchFocused && (searchQuery.length >= 2 || searchResults.length > 0) && (
                   <Fade in={isSearchFocused}>
                     <Paper
+                      className="search-results"
                       elevation={8}
                       sx={{
                         position: 'absolute',
@@ -609,11 +648,14 @@ const Navbar = () => {
                         right: 0,
                         maxHeight: 500,
                         overflow: 'auto',
-                        backgroundColor: '#1a1a1a',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.98)',
+                        backdropFilter: 'blur(25px)',
+                        WebkitBackdropFilter: 'blur(25px)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
                         borderRadius: 1,
                         zIndex: theme.zIndex.modal + 1,
                         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+                        backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
                       }}
                     >
                       {isSearching ? (
@@ -646,16 +688,13 @@ const Navbar = () => {
                                 <ListItemButton
                                   onClick={() => handleResultClick(result)}
                                   sx={{
-                                    borderRadius: 0,
+                                    borderRadius: 1,
                                     py: 2,
                                     px: 2,
                                     borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                                     '&:hover': {
                                       backgroundColor: 'rgba(255, 255, 255, 0.08)',
                                     },
-                                    '&:last-child': {
-                                      borderBottom: 'none',
-                                    }
                                   }}
                                 >
                                   <ListItemIcon sx={{ minWidth: 36, mr: 1 }}>
@@ -665,7 +704,6 @@ const Navbar = () => {
                                     }} />
                                   </ListItemIcon>
                                   <Box sx={{ flex: 1 }}>
-                                    {/* Hadith Header */}
                                     <Box sx={{ 
                                       display: 'flex', 
                                       alignItems: 'center', 
@@ -720,7 +758,6 @@ const Navbar = () => {
                                       </Typography>
                                     </Box>
 
-                                    {/* Arabic Preview - Always show Arabic */}
                                     {result.arabic && (
                                       <Typography
                                         variant="body2"
@@ -745,7 +782,6 @@ const Navbar = () => {
                                       </Typography>
                                     )}
 
-                                    {/* English Preview - Show if query is English */}
                                     {result.english && isEnglishQuery(searchQuery) && (
                                       <Typography
                                         variant="body2"
@@ -780,57 +816,116 @@ const Navbar = () => {
                 )}
               </Box>
             )}
-{/* Desktop Menu Links */}
-{!isMobile && (
-  <Box sx={{ 
-    display: 'flex', 
-    gap: 0.5, 
-    flexShrink: 0,
-    height: '100%',
-    alignItems: 'center',
-  }}>
-    {navLinks.map((link) => (
-      <Button
-        key={link.text}
-        component={Link}
-        to={link.path}
-        startIcon={link.icon}
-        sx={{
-          color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
-          fontWeight: isActive(link.path) ? 600 : 400,
-          backgroundColor: isActive(link.path) ? 'transparent' : 'transparent', // No background on active
-          position: 'relative',
-          overflow: 'hidden',
-          borderRadius: 1,
-          px: 2,
-          py: 0.75,
-          minWidth: 'auto',
-          minHeight: 36,
-          fontSize: '0.875rem',
-          transition: 'all 0.3s ease',
-          // White underline when active
-          '&:after': isActive(link.path) ? {
-            content: '""',
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            width: '100%',
-            height: '2px',
-            backgroundColor: '#ffffff',
-          } : {},
-          // On hover - grey background glow (like before)
-          '&:hover': {
-            backgroundColor: 'rgba(255, 255, 255, 0.08)', // Grey glow background
-            color: '#ffffff', // Keep text white on hover
-          },
-        }}
-      >
-        {link.text}
-      </Button>
-    ))}
-  </Box>
-)}
-            {/* Mobile: Search Icon & Menu */}
+
+            {/* Desktop Menu Links - Only Home + Sign In/My Profile */}
+            {!isMobile && (
+              <Box sx={{ 
+                display: 'flex', 
+                gap: 0.5, 
+                flexShrink: 0,
+                height: '100%',
+                alignItems: 'center',
+              }}>
+                {/* Always show Home */}
+                <Button
+                  component={Link}
+                  to="/"
+                  sx={{
+                    color: isActive('/') ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+                    fontWeight: isActive('/') ? 600 : 400,
+                    backgroundColor: 'transparent',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    borderRadius: 1,
+                    px: 2,
+                    py: 0.75,
+                    minWidth: 'auto',
+                    minHeight: 36,
+                    fontSize: '0.875rem',
+                    transition: 'all 0.3s ease',
+                    '&:after': isActive('/') ? {
+                      content: '""',
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '2px',
+                      backgroundColor: '#ffffff',
+                    } : {},
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      color: '#ffffff',
+                    },
+                  }}
+                >
+                  Home
+                </Button>
+
+                {/* Show My Profile when logged in, Sign In when not */}
+                {user ? (
+                  <Button
+                    component={Link}
+                    to="/profile"
+                    startIcon={<PersonIcon />}
+                    sx={{
+                      color: isActive('/profile') ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+                      backgroundColor: 'transparent',
+                      borderRadius: 1,
+                      px: 2,
+                      py: 0.75,
+                      minHeight: 36,
+                      fontSize: '0.875rem',
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        color: '#ffffff',
+                      },
+                    }}
+                  >
+                    My Profile
+                  </Button>
+                ) : (
+                  <Button
+                    component={Link}
+                    to="/login"
+                    startIcon={<LoginIcon />}
+                    sx={{
+                      color: isActive('/login') ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+                      backgroundColor: 'transparent',
+                      borderRadius: 1,
+                      px: 2,
+                      py: 0.75,
+                      minHeight: 36,
+                      fontSize: '0.875rem',
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        color: '#ffffff',
+                      },
+                    }}
+                  >
+                    Sign In
+                  </Button>
+                )}
+
+                {/* Menu Icon for drawer */}
+                <IconButton 
+                  onClick={toggleDrawer(true)}
+                  sx={{ 
+                    color: '#ffffff',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    width: 36,
+                    height: 36,
+                    ml: 1,
+                    '&:hover': { 
+                      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                    },
+                  }}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Box>
+            )}
+
+            {/* Mobile: Search Icon & Menu Icon */}
             {isMobile && (
               <Box sx={{ 
                 display: 'flex', 
@@ -839,6 +934,7 @@ const Navbar = () => {
                 height: '100%',
               }}>
                 <IconButton
+                  className="search-icon-button"
                   onClick={() => setIsSearchFocused(!isSearchFocused)}
                   sx={{ 
                     color: '#ffffff',
@@ -868,14 +964,20 @@ const Navbar = () => {
 
           {/* Mobile Search Bar (Expands when clicked) */}
           {isMobile && isSearchFocused && (
-            <Box sx={{ 
-              p: 2, 
-              pt: 1, 
-              position: 'relative',
-              backgroundColor: '#000000',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-            }}>
+            <Box 
+              className="search-container"
+              sx={{ 
+                p: 2, 
+                pt: 1, 
+                position: 'relative',
+                backgroundColor: 'rgba(0, 0, 0, 0.98)',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                borderBottomLeftRadius: 8,
+                borderBottomRightRadius: 8,
+              }}
+            >
               <TextField
+                className="search-input"
                 fullWidth
                 autoFocus
                 variant="outlined"
@@ -908,10 +1010,21 @@ const Navbar = () => {
                   ),
                   sx: {
                     color: '#ffffff',
-                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                    borderRadius: 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    backdropFilter: 'blur(5px)',
+                    WebkitBackdropFilter: 'blur(5px)',
+                    borderRadius: 2,
+                    fontSize: '0.875rem',
                     '& .MuiOutlinedInput-notchedOutline': {
-                      borderColor: 'rgba(255, 255, 255, 0.2)',
+                      borderColor: 'rgba(255, 255, 255, 0.3)',
+                      borderWidth: '1px',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'rgba(255, 255, 255, 0.4)',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                      borderWidth: '1px',
                     },
                   }
                 }}
@@ -919,13 +1032,18 @@ const Navbar = () => {
               
               {searchResults.length > 0 ? (
                 <Paper
+                  className="search-results"
                   sx={{
                     mt: 1,
                     maxHeight: 400,
                     overflow: 'auto',
-                    backgroundColor: '#1a1a1a',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: 1,
+                    backgroundColor: 'rgba(0, 0, 0, 0.98)',
+                    backdropFilter: 'blur(25px)',
+                    WebkitBackdropFilter: 'blur(25px)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: 2,
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+                    backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
                   }}
                 >
                   <List>
@@ -938,10 +1056,13 @@ const Navbar = () => {
                         <ListItemButton
                           onClick={() => handleResultClick(result)}
                           sx={{
-                            borderRadius: 0,
+                            borderRadius: 1,
                             py: 2,
                             px: 2,
                             borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                            '&:hover': {
+                              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            },
                           }}
                         >
                           <ListItemIcon sx={{ minWidth: 36 }}>
@@ -971,7 +1092,6 @@ const Navbar = () => {
                                 </Typography>
                               </Box>
                               
-                              {/* Show Arabic text for Arabic searches, English for English searches */}
                               {isArabicQuery(searchQuery) && result.arabic ? (
                                 <Typography
                                   variant="body2"
@@ -1015,8 +1135,20 @@ const Navbar = () => {
                   </List>
                 </Paper>
               ) : searchQuery.length >= 2 && !isSearching ? (
-                <Paper sx={{ mt: 1, p: 3, backgroundColor: '#1a1a1a', borderRadius: 1 }}>
-                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>
+                <Paper 
+                  className="search-results"
+                  sx={{ 
+                    mt: 1, 
+                    p: 3, 
+                    backgroundColor: 'rgba(0, 0, 0, 0.98)',
+                    backdropFilter: 'blur(25px)',
+                    WebkitBackdropFilter: 'blur(25px)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: 2,
+                    textAlign: 'center' 
+                  }}
+                >
+                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                     No hadith found for "{searchQuery}"
                   </Typography>
                 </Paper>
@@ -1026,146 +1158,208 @@ const Navbar = () => {
         </Container>
       </AppBar>
 
-{/* Mobile Drawer */}
-<Drawer 
-  anchor="right" 
-  open={drawerOpen} 
-  onClose={toggleDrawer(false)}
-  PaperProps={{
-    sx: {
-      width: { xs: '85%', sm: 280 },
-      maxWidth: 320,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)', // Darker background for better readability
-      backdropFilter: 'blur(10px)', // Subtle blur
-      WebkitBackdropFilter: 'blur(10px)',
-      borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
-      // Optional gradient for subtle gloss
-      backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-      boxShadow: '0 0 20px rgba(0, 0, 0, 0.3)', // Soft shadow for depth
-    }
-  }}
->
-  <Box sx={{ 
-    p: 2, // Reduced padding
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-  }}>
-    {/* Logo Section - Smaller for mobile */}
-    <Box 
-      onClick={handleLogoClick}
-      sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 2, // Reduced gap
-        mb: 3, // Reduced margin
-        mt: 1, // Reduced margin
-        cursor: 'pointer',
-        p: 1,
-        borderRadius: 2,
-        '&:hover': {
-          backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        }
-      }}
-    >
-      <Box
-        component="img"
-        src={myLogo}
-        alt="Ghadir Project Logo"
-        sx={{ 
-          height: 60, // Smaller logo for mobile
-          width: 60,
-          borderRadius: '50%',
-          objectFit: 'cover',
+      {/* Mobile Drawer - Fixed zIndex to appear in front */}
+      <Drawer 
+        anchor="right" 
+        open={drawerOpen} 
+        onClose={toggleDrawer(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: '75%', sm: 280 },
+            maxWidth: 320,
+            backgroundColor: 'rgba(0, 0, 0, 0.87)',
+            backdropFilter: 'blur(7px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
+            backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+            boxShadow: '0 0 30px rgba(0, 0, 0, 0.5)',
+            zIndex: 1400, // Higher than AppBar (1300)
+          }
         }}
-      />
-      <Box>
-        <Typography 
-          variant="h6" // Smaller variant for mobile
-          sx={{ 
-            color: '#ffffff', 
-            fontWeight: 700,
-            fontSize: '1.2rem', // Smaller font size
-            letterSpacing: '0.3px'
-          }}
-        >
-          Shia Library
-        </Typography>
-        <Typography 
-          variant="body2" // Changed to body2
-          sx={{ 
-            color: 'rgba(255, 255, 255, 0.8)',
-            fontSize: '0.85rem', // Smaller font size
-            fontWeight: 400
-          }}
-        >
-          Ghadir Project
-        </Typography>
-      </Box>
-    </Box>
-    
-    <Divider sx={{ 
-      borderColor: 'rgba(255, 255, 255, 0.15)', 
-      mb: 3, // Reduced margin
-      borderWidth: 1 // Thinner border
-    }} />
-    
-    {/* Navigation Links */}
-    <List sx={{ flex: 1 }}>
-      {navLinks.map((link) => (
-        <ListItem key={link.text} disablePadding>
-          <ListItemButton
-            component={Link}
-            to={link.path}
-            onClick={toggleDrawer(false)}
-            sx={{
-              color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
-              backgroundColor: isActive(link.path) ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-              borderRadius: 1,
-              mb: 0.5,
+        sx={{
+          zIndex: 1400, // Ensure drawer is in front
+        }}
+      >
+        <Box sx={{ 
+          p: 2,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <Box 
+            onClick={handleLogoClick}
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 2,
+              mb: 3,
+              mt: 1,
+              cursor: 'pointer',
+              p: 1,
+              borderRadius: 2,
               '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
               }
             }}
           >
-            <ListItemIcon sx={{ 
-              color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.7)',
-              minWidth: 36 // Smaller icon spacing
-            }}>
-              {link.icon}
-            </ListItemIcon>
-            <ListItemText 
-              primary={link.text}
-              primaryTypographyProps={{
-                fontWeight: isActive(link.path) ? 600 : 400,
-                fontSize: '0.95rem' // Slightly smaller font
+            <Box
+              component="img"
+              src={myLogo}
+              alt="Ghadir Project Logo"
+              sx={{ 
+                height: 60,
+                width: 60,
+                borderRadius: '50%',
+                objectFit: 'cover',
               }}
             />
-          </ListItemButton>
-        </ListItem>
-      ))}
-    </List>
-    
-    {/* Optional: Add footer or version info */}
-    <Box sx={{ 
-      mt: 'auto', 
-      pt: 2,
-      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-    }}>
-      <Typography 
-        variant="caption" 
-        sx={{ 
-          color: 'rgba(255, 255, 255, 0.5)',
-          fontSize: '0.75rem',
-          display: 'block',
-          textAlign: 'center'
-        }}
-      >
-        © {new Date().getFullYear()} Ghadir Project
-      </Typography>
-    </Box>
-  </Box>
-</Drawer>
+            <Box>
+              <Typography 
+                variant="h6"
+                sx={{ 
+                  color: '#ffffff', 
+                  fontWeight: 700,
+                  fontSize: '1.2rem',
+                  letterSpacing: '0.3px'
+                }}
+              >
+                Shia Library
+              </Typography>
+              <Typography 
+                variant="body2"
+                sx={{ 
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  fontSize: '0.85rem',
+                  fontWeight: 400
+                }}
+              >
+                Ghadir Project
+              </Typography>
+            </Box>
+          </Box>
+          
+          <Divider sx={{ 
+            borderColor: 'rgba(255, 255, 255, 0.15)', 
+            mb: 3,
+            borderWidth: 1
+          }} />
+          
+          <List sx={{ flex: 1 }}>
+            {getMenuLinks().map((link) => (
+              <ListItem key={link.text} disablePadding>
+                <ListItemButton
+                  component={Link}
+                  to={link.path}
+                  onClick={toggleDrawer(false)}
+                  sx={{
+                    color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+                    backgroundColor: isActive(link.path) ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    }
+                  }}
+                >
+                  <ListItemIcon sx={{ 
+                    color: isActive(link.path) ? '#ffffff' : 'rgba(255, 255, 255, 0.7)',
+                    minWidth: 36
+                  }}>
+                    {link.icon}
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={link.text}
+                    primaryTypographyProps={{
+                      fontWeight: isActive(link.path) ? 600 : 400,
+                      fontSize: '0.95rem'
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+            
+            {/* Logout/Sign In in drawer */}
+            {user ? (
+              <ListItem disablePadding>
+                <ListItemButton
+                  onClick={() => {
+                    toggleDrawer(false)();
+                    handleLogout();
+                  }}
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                    }
+                  }}
+                >
+                  <ListItemIcon sx={{ 
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    minWidth: 36
+                  }}>
+                    <LogoutIcon />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Sign Out"
+                    primaryTypographyProps={{
+                      fontSize: '0.95rem'
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ) : (
+              <ListItem disablePadding>
+                <ListItemButton
+                  component={Link}
+                  to="/login"
+                  onClick={toggleDrawer(false)}
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    }
+                  }}
+                >
+                  <ListItemIcon sx={{ 
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    minWidth: 36
+                  }}>
+                    <LoginIcon />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Sign In"
+                    primaryTypographyProps={{
+                      fontSize: '0.95rem'
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+          </List>
+          
+          <Box sx={{ 
+            mt: 'auto', 
+            pt: 2,
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontSize: '0.75rem',
+                display: 'block',
+                textAlign: 'center'
+              }}
+            >
+              © {new Date().getFullYear()} Ghadir Project
+            </Typography>
+          </Box>
+        </Box>
+      </Drawer>
     </>
   );
 };

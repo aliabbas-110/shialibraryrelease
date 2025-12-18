@@ -28,8 +28,8 @@ const Hero = () => {
                         justifyContent: 'flex-start'
                     }}
                 >
-                    <Typography sx={{ opacity: 0.6, fontSize: 40, mb: 1 }}>﷽</Typography>
-                    <Typography sx={{ opacity: 0.6, fontSize: 25, mb: 1 }}>Ya Ali a.s Madad</Typography>
+                    <Typography sx={{ opacity: 0.6, fontSize: 43, mb: 1 }}>﷽</Typography>
+                    <Typography sx={{ opacity: 0.6, fontSize: 22, mb: 1 }}>Ya Ali ﷺ Madad</Typography>
                     <Typography variant="h2" sx={{ fontWeight: 'bold', letterSpacing: '-0.5px' }}>
                         Shia Library
                     </Typography>
