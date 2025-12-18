@@ -18,6 +18,7 @@ import Profile from './Pages/Profile';
 function App() {
   return (
     <ThemeProvider theme={theme}>
+      <PasswordGate>
       <Router>
         <AuthProvider>
             <Routes>
@@ -36,6 +37,7 @@ function App() {
             <Analytics />
         </AuthProvider>
       </Router>
+      </PasswordGate>
     </ThemeProvider>
   );
 }
