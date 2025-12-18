@@ -72,12 +72,17 @@ export default function ChapterPage() {
   // Fetch book details
   useEffect(() => {
     const fetchBook = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("books")
-        .select("title, english_title")
+        .select("id, title, english_title")
         .eq("id", bookId)
         .single();
-      setBook(data);
+      
+      if (error) {
+        console.error("Error fetching book:", error);
+      } else {
+        setBook(data);
+      }
     };
     fetchBook();
   }, [bookId]);
@@ -87,7 +92,7 @@ export default function ChapterPage() {
     window.scrollTo(0, 0);
   }, [chapterId]);
 
-  // Scroll to specific hadith from search
+  // Scroll to specific hadith from search or anchor link
   useEffect(() => {
     const handleScrollToHadith = () => {
       const hash = window.location.hash;
@@ -130,27 +135,42 @@ export default function ChapterPage() {
     handleScrollToHadith();
   }, [hadiths, chapterId]);
   
-  // Fetch hadiths for this chapter
+  // Fetch hadiths for this chapter - SIMPLER QUERY
   useEffect(() => {
     const fetchHadiths = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("hadith")
-        .select("id, hadith_number, arabic, english, hadith_reference(reference)")
-        .eq("chapter_id", chapterId)
-        .order("hadith_number", { ascending: true, nullsFirst: false });
+      
+      try {
+        // Simple query to just get hadiths and references
+        const { data, error } = await supabase
+          .from("hadith")
+          .select(`
+            id, 
+            hadith_number, 
+            arabic, 
+            english,
+            hadith_reference(reference)
+          `)
+          .eq("chapter_id", chapterId)
+          .order("hadith_number", { ascending: true, nullsFirst: false });
 
-      if (error) {
-        console.error("Error fetching hadith:", error);
-        setHadiths([]);
-      } else {
+        if (error) {
+          console.error("Error fetching hadith:", error);
+          setHadiths([]);
+          setLoading(false);
+          return;
+        }
+
+        if (!data) {
+          setHadiths([]);
+          setLoading(false);
+          return;
+        }
+
         // Custom sorting for hadith numbers with slashes
-        const sortedHadiths = (data || []).sort((a, b) => {
-          // Function to parse hadith numbers with slashes
+        const sortedHadiths = data.sort((a, b) => {
           const parseHadithNumber = (num) => {
-            if (!num) return [0, 0]; // Default for null/undefined
-            
-            // Check if it contains a slash
+            if (!num) return [0, 0];
             if (num.includes('/')) {
               const parts = num.split('/');
               return [
@@ -158,27 +178,26 @@ export default function ChapterPage() {
                 parseInt(parts[1]) || 0
               ];
             }
-            
-            // If no slash, treat as single number
             return [parseInt(num) || 0, 0];
           };
 
           const [aMain, aSub] = parseHadithNumber(a.hadith_number);
           const [bMain, bSub] = parseHadithNumber(b.hadith_number);
           
-          // First compare main numbers
-          if (aMain !== bMain) {
-            return aMain - bMain;
-          }
-          
-          // If main numbers are equal, compare sub-numbers (after slash)
+          if (aMain !== bMain) return aMain - bMain;
           return aSub - bSub;
         });
         
         setHadiths(sortedHadiths);
+
+      } catch (error) {
+        console.error("Error in fetchHadiths:", error);
+        setHadiths([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
+    
     fetchHadiths();
   }, [chapterId]);
 
@@ -201,35 +220,59 @@ export default function ChapterPage() {
   useEffect(() => {
     const fetchChapters = async () => {
       try {
-        // 1. Fetch all chapters for the specific book 
-        // via the volume relationship
-        const { data: volumesData } = await supabase
+        // Fetch volumes for this book
+        const { data: volumesData, error: volumesError } = await supabase
           .from("volumes")
           .select("id")
           .eq("book_id", bookId);
 
-        if (!volumesData) return;
+        if (volumesError) {
+          console.error("Error fetching volumes:", volumesError);
+          return;
+        }
+
+        if (!volumesData || volumesData.length === 0) {
+          // No volumes → fetch chapters with volume_id IS NULL
+          const { data: chapterList, error: chapterError } = await supabase
+            .from("chapters")
+            .select("id, chapter_number, title_en, title_ar")
+            .is("volume_id", null)
+            .order("chapter_number", { ascending: true });
+
+          if (chapterError) {
+            console.error("Fetch error:", chapterError.message);
+            return;
+          }
+
+          setChapters(chapterList || []);
+          const index = chapterList?.findIndex((c) => String(c.id) === String(chapterId)) || -1;
+          setCurrentIndex(index);
+          setCurrentChapter(chapterList?.[index]);
+          return;
+        }
+
+        // Get volume IDs
         const volumeIds = volumesData.map(v => v.id);
 
-        // 2. Fetch chapters using ONLY the columns in your schema
-        const { data: chapterList, error } = await supabase
+        // Fetch chapters for these volumes
+        const { data: chapterList, error: chapterError } = await supabase
           .from("chapters")
           .select("id, chapter_number, title_en, title_ar")
           .in("volume_id", volumeIds)
           .order("chapter_number", { ascending: true });
 
-        if (error) {
-          console.error("Fetch error:", error.message);
+        if (chapterError) {
+          console.error("Fetch error:", chapterError.message);
           return;
         }
 
-        // 3. Sync the state
-        setChapters(chapterList);
+        // Sync the state
+        setChapters(chapterList || []);
         
         // Find where we are in the list
-        const index = chapterList.findIndex((c) => String(c.id) === String(chapterId));
+        const index = chapterList?.findIndex((c) => String(c.id) === String(chapterId)) || -1;
         setCurrentIndex(index);
-        setCurrentChapter(chapterList[index]);
+        setCurrentChapter(chapterList?.[index]);
 
       } catch (err) {
         console.error("System Error:", err);
@@ -302,24 +345,37 @@ export default function ChapterPage() {
     return chapter.title_en || `Chapter ${chapter.chapter_number}`;
   };
   
-  // Copy hadith to clipboard in the specified format
+  // Get book title from book state
+  const getBookTitle = () => {
+    return book?.title || "Unknown Book";
+  };
+  
+  // Get book English title
+  const getBookEnglishTitle = () => {
+    return book?.english_title;
+  };
+  
+  // Copy hadith to clipboard
   const copyHadithFormatted = (hadith) => {
-    // Get the correct URL with full path
-    const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}`;
+    // Get the correct URL with hadith anchor
+    const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}#hadith-${hadith.id}`;
     
-    // Get book name
-    const bookName = book?.title || book?.english_title || "Unknown Book";
+    // Get book name from book state
+    const bookName = getBookTitle();
+    const bookEnglishName = getBookEnglishTitle();
+    const chapterNum = currentChapter?.chapter_number || "?";
     
-    // Build reference line - check what reference data we have
+    // Build reference line
     let referenceLine = "";
     if (hadith.hadith_reference?.reference) {
       referenceLine = hadith.hadith_reference.reference;
     } else {
       // If no reference in database, use book and chapter number
-      referenceLine = `${bookName}, Chapter ${currentChapter?.chapter_number || "?"}`;
+      referenceLine = `${bookName}`;
+ 
     }
     
-    // Format exactly like your example
+    // Format the text
     const formattedText = `${hadith.arabic}\n\n${hadith.english}\n\n${referenceLine}\n${hadithUrl}`;
     
     navigator.clipboard.writeText(formattedText)
@@ -507,11 +563,11 @@ export default function ChapterPage() {
 
             
             {/* Hadith Count */}
-{hadiths.length > 0 && !loading && (
-  <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-    {hadiths.length} {hadiths.length !== 1 ? "Ahadith" : "Hadith"}
-  </Typography>
-)}
+            {hadiths.length > 0 && !loading && (
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                {hadiths.length} {hadiths.length !== 1 ? "Ahadith" : "Hadith"}
+              </Typography>
+            )}
           </Box>
 
           {/* Right Navigation Button */}
@@ -652,12 +708,24 @@ export default function ChapterPage() {
                 )}
               </Box>
 
-              {/* Hadith Header */}
+              {/* Hadith Header with Book, Chapter, and Hadith Info */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3, pr: 6 }}>
                 <Chip
                   label={`Hadith ${h.hadith_number}`}
-                  color="primary.light"
+                  color="primary"
                   variant="outlined"
+                />
+                <Chip
+                  label={`Chapter ${currentChapter?.chapter_number || "?"}`}
+                  color="secondary"
+                  variant="outlined"
+                  size="small"
+                />
+                <Chip
+                  label={getBookTitle()}
+                  color="default"
+                  variant="outlined"
+                  size="small"
                 />
                 <Divider orientation="vertical" flexItem />
                 <Typography variant="caption" color="text.secondary">
@@ -718,7 +786,7 @@ export default function ChapterPage() {
                 )}
               </Paper>
 
-              {/* English Translation - Always show full */}
+              {/* English Translation - Always show full, left-aligned */}
               <Paper
                 elevation={0}
                 sx={{
@@ -737,6 +805,8 @@ export default function ChapterPage() {
                     lineHeight: 1.7,
                     whiteSpace: "pre-line",
                     fontSize: { xs: "1rem", md: "1.05rem" },
+                    textAlign: "left", // Ensure left alignment
+                    direction: "ltr", // Ensure left-to-right direction
                   }}
                 >
                   {h.english}

@@ -29,7 +29,7 @@ export default function PageTransition() {
         bottom: 0,
         zIndex: 9999,
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(3px)',
+        backdropFilter: 'blur(100px)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
