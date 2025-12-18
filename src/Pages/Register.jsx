@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -16,66 +16,164 @@ import AppRegistrationIcon from '@mui/icons-material/AppRegistration';
 import Navbar from '../components/Navbar/Navbar';
 
 const Register = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [emailVerified, setEmailVerified] = useState(false);
   
   const { signUp, user } = useAuth();
   const navigate = useNavigate();
 
   // Redirect if already logged in
-  if (user) {
-    navigate('/profile');
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate('/profile');
+    }
+  }, [user, navigate]);
+
+  const validateForm = () => {
+    const errors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    // Email validation
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!emailRegex.test(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    } else if (formData.email.length > 255) {
+      errors.email = 'Email must be less than 255 characters';
+    }
+    
+    // Password validation
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length > 72) {
+      errors.password = 'Password must be less than 72 characters';
+    }
+    
+    // Confirm password validation
+    if (!formData.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your password';
+    } else if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+    
+    return errors;
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    // Trim email input
+    if (name === 'email') {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value.trim()
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+    
+    // Clear field-specific error when user types
+    if (formErrors[name]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+    
+    // Clear general error when user starts typing
+    if (error) {
+      setError('');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setEmailVerified(false);
+    setFormErrors({});
     
-    // Validation
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    // Validate form
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      
+      // Focus on first error field
+      const firstErrorField = Object.keys(errors)[0];
+      const element = document.getElementById(`register-${firstErrorField}`);
+      if (element) {
+        element.focus();
+      }
+      
       return;
     }
     
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const { error } = await signUp(email, password);
-      if (error) {
-        setError(error);
+      const { error: signUpError, user: newUser } = await signUp(
+        formData.email.toLowerCase(), // Normalize email to lowercase
+        formData.password
+      );
+      
+      if (signUpError) {
+        // Check if it's a duplicate email error
+        if (signUpError.toLowerCase().includes('already') || 
+            signUpError.toLowerCase().includes('email')) {
+          setFormErrors({
+            email: 'This email is already registered'
+          });
+          document.getElementById('register-email')?.focus();
+        }
+        setError(signUpError);
         return;
       }
       
-      setSuccess('Account created successfully! You can now sign in.');
+      // Check if email confirmation is required
+      if (newUser && !newUser.email_confirmed_at) {
+        setEmailVerified(false);
+        setSuccess('Account created! Please check your email to confirm your account before signing in.');
+      } else {
+        setEmailVerified(true);
+        setSuccess('Account created successfully! You can now sign in.');
+      }
       
       // Clear form
-      setEmail('');
-      setPassword('');
-      setConfirmPassword('');
+      setFormData({
+        email: '',
+        password: '',
+        confirmPassword: ''
+      });
       
-      // Auto-redirect to login after 2 seconds
+      // Auto-redirect to login after 3 seconds
       setTimeout(() => {
         navigate('/login');
-      }, 2000);
+      }, 3000);
       
     } catch (err) {
-      setError('An unexpected error occurred');
-      console.error(err);
+      console.error('Registration error:', err);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (user) {
+    return null;
+  }
 
   return (
     <>
@@ -97,62 +195,84 @@ const Register = () => {
             </Typography>
           </Box>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
+          {error && !Object.keys(formErrors).length && (
+            <Alert 
+              severity="error" 
+              sx={{ mb: 3 }} 
+              onClose={() => setError('')}
+            >
               {error}
             </Alert>
           )}
           
           {success && (
-            <Alert severity="success" sx={{ mb: 3 }}>
+            <Alert 
+              severity={emailVerified ? "success" : "info"} 
+              sx={{ mb: 3 }}
+              onClose={() => setSuccess('')}
+            >
               {success}
             </Alert>
           )}
 
           <form onSubmit={handleSubmit}>
             <Stack spacing={3}>
-<TextField
-  fullWidth
-  label="Email Address"
-  type="email"
-  value={email}
-  onChange={(e) => setEmail(e.target.value)}
-  required
-  disabled={loading}
-  id="register-email" // Add this
-  name="email" // Add this
-  autoComplete="email" // Add this
-  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-/>
+              <TextField
+                fullWidth
+                label="Email Address"
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                error={!!formErrors.email}
+                helperText={formErrors.email}
+                required
+                disabled={loading}
+                id="register-email"
+                autoComplete="email"
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                inputProps={{
+                  maxLength: 255
+                }}
+              />
 
-<TextField
-  fullWidth
-  label="Password"
-  type="password"
-  value={password}
-  onChange={(e) => setPassword(e.target.value)}
-  required
-  disabled={loading}
-  id="register-password" // Add this
-  name="new-password" // Add this for registration
-  autoComplete="new-password" // Add this
-  helperText="At least 6 characters"
-  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-/>
+              <TextField
+                fullWidth
+                label="Password"
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                error={!!formErrors.password}
+                helperText={formErrors.password || "At least 6 characters"}
+                required
+                disabled={loading}
+                id="register-password"
+                autoComplete="new-password"
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                inputProps={{
+                  maxLength: 72
+                }}
+              />
 
-<TextField
-  fullWidth
-  label="Confirm Password"
-  type="password"
-  value={confirmPassword}
-  onChange={(e) => setConfirmPassword(e.target.value)}
-  required
-  disabled={loading}
-  id="register-confirm-password" // Add this
-  name="confirm-password" // Add this
-  autoComplete="new-password" // Add this
-  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-/>
+              <TextField
+                fullWidth
+                label="Confirm Password"
+                type="password"
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                error={!!formErrors.confirmPassword}
+                helperText={formErrors.confirmPassword}
+                required
+                disabled={loading}
+                id="register-confirmPassword"
+                autoComplete="new-password"
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                inputProps={{
+                  maxLength: 72
+                }}
+              />
 
               <Button
                 fullWidth
@@ -166,6 +286,7 @@ const Register = () => {
                   borderRadius: 2,
                   fontWeight: 'bold',
                   fontSize: '1rem',
+                  textTransform: 'none',
                 }}
               >
                 {loading ? 'Creating Account...' : 'Create Account'}
@@ -177,7 +298,7 @@ const Register = () => {
             <Typography variant="body2" color="text.secondary">
               Already have an account?{' '}
               <Link to="/login" style={{ textDecoration: 'none' }}>
-                <Button variant="text" size="small">
+                <Button variant="text" size="small" sx={{ textTransform: 'none' }}>
                   Sign In
                 </Button>
               </Link>
