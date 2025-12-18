@@ -507,11 +507,11 @@ export default function ChapterPage() {
 
             
             {/* Hadith Count */}
-            {hadiths.length > 0 && !loading && (
-              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-                {hadiths.length} Hadith{hadiths.length !== 1 ? "s" : ""}
-              </Typography>
-            )}
+{hadiths.length > 0 && !loading && (
+  <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+    {hadiths.length} {hadiths.length !== 1 ? "Ahadith" : "Hadith"}
+  </Typography>
+)}
           </Box>
 
           {/* Right Navigation Button */}

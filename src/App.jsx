@@ -14,6 +14,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import Login from './Pages/Login';
 import Register from './Pages/Register';
 import Profile from './Pages/Profile';
+import PageTransition from './components/PageTransition';
+
 
 function App() {
   return (
@@ -21,6 +23,8 @@ function App() {
       <PasswordGate>
       <Router>
         <AuthProvider>
+                      <PageTransition />
+
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/about" element={<About />} />
