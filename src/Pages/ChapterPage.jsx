@@ -289,7 +289,7 @@ export default function ChapterPage() {
     if (!user) {
       setSnackbar({
         open: true,
-        message: "Please login to save hadiths",
+        message: "Please sign in to save hadith",
         severity: "warning"
       });
       return;
