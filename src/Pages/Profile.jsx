@@ -96,7 +96,6 @@ const Profile = () => {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
             <Box>
               <Typography variant="h4" gutterBottom>
-                <PersonIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
                 My Profile
               </Typography>
               <Typography color="text.secondary">
@@ -154,23 +153,26 @@ const Profile = () => {
                           </Typography>
                         </Link>
                       }
-                      secondary={
-                        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                          <Chip 
-                            label={`Hadith #${item.hadith.hadith_number}`} 
-                            size="small" 
-                            variant="outlined" 
-                          />
-                          <Chip 
-                            label={item.hadith.chapters.volumes.books.title} 
-                            size="small" 
-                            variant="outlined" 
-                          />
-                          <Typography variant="caption" color="text.secondary">
-                            Saved on {formatDate(item.created_at)}
-                          </Typography>
-                        </Stack>
-                      }
+secondary={
+  <Box sx={{ mt: 1 }}>
+    <Box sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+      <Chip 
+        label={`Hadith #${item.hadith.hadith_number}`} 
+        size="small" 
+        variant="outlined" 
+      />
+      <Chip 
+        label={item.hadith.chapters.volumes.books.title} 
+        size="small" 
+        variant="outlined" 
+      />
+    </Box>
+    <Typography variant="caption" color="text.secondary">
+      Saved on {formatDate(item.created_at)}
+    </Typography>
+  </Box>
+}
+                      
                     />
                   </Box>
                   <ListItemSecondaryAction>
