@@ -10,6 +10,25 @@ export const useBookData = (bookId) => {
   const [selectedVolumeNumber, setSelectedVolumeNumber] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Helper function to extract and compare last 4 digits
+  const sortChaptersByLast4Digits = (chaptersArray) => {
+    if (!chaptersArray || chaptersArray.length === 0) return chaptersArray;
+    
+    return [...chaptersArray].sort((a, b) => {
+      // Extract last 4 digits from the chapter ID
+      const getLast4Digits = (id) => {
+        const idStr = String(id);
+        // Get last 4 characters, convert to number
+        return parseInt(idStr.slice(-4)) || 0;
+      };
+      
+      const aLast4 = getLast4Digits(a.id);
+      const bLast4 = getLast4Digits(b.id);
+      
+      return aLast4 - bLast4; // Ascending order
+    });
+  };
+
   // Fetch book
   useEffect(() => {
     const fetchBook = async () => {
@@ -41,9 +60,11 @@ export const useBookData = (bookId) => {
         const { data: chaps } = await supabase
           .from("chapters")
           .select("*")
-          .is("volume_id", null)
-          .order("chapter_number");
-        setChapters(chaps || []);
+          .is("volume_id", null);
+        
+        // Sort chapters by last 4 digits
+        const sortedChapters = sortChaptersByLast4Digits(chaps);
+        setChapters(sortedChapters || []);
         setVolumes([]);
         setSelectedVolume(null);
         setSelectedVolumeNumber("");
@@ -61,9 +82,11 @@ export const useBookData = (bookId) => {
           const { data: chaps } = await supabase
             .from("chapters")
             .select("*")
-            .eq("volume_id", vols[0].id)
-            .order("chapter_number");
-          setChapters(chaps || []);
+            .eq("volume_id", vols[0].id);
+          
+          // Sort chapters by last 4 digits
+          const sortedChapters = sortChaptersByLast4Digits(chaps);
+          setChapters(sortedChapters || []);
           setVolumes([]);
           setSelectedVolume(vols[0].id);
           setSelectedVolumeNumber(0);
@@ -81,9 +104,11 @@ export const useBookData = (bookId) => {
       const { data } = await supabase
         .from("chapters")
         .select("*")
-        .eq("volume_id", selectedVolume)
-        .order("chapter_number");
-      setChapters(data || []);
+        .eq("volume_id", selectedVolume);
+      
+      // Sort chapters by last 4 digits
+      const sortedChapters = sortChaptersByLast4Digits(data);
+      setChapters(sortedChapters || []);
       
       // Update selected volume number
       const selectedVol = volumes.find(v => v.id === selectedVolume);
