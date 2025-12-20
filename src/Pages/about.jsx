@@ -139,7 +139,7 @@ export function About() {
                 px: { xs: 1, md: 4 },
               }}
             >
-              *"If all the forests were pens, the sea were ink, the jinn were counters, and all mankind were writers, they still would not be able to count the virtues of Ali ibn Abi Talib عليه السلام."*
+              If all the forests were pens, the sea were ink, the jinn were counters, and all mankind were writers, they still would not be able to count the virtues of Ali ibn Abi Talib عليه السلام
             </Typography>
 
             {/* Reference */}
