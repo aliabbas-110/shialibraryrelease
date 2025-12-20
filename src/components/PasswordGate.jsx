@@ -64,23 +64,7 @@ const PasswordGate = ({ children }) => {
     <>
       {children}
       {/* Optional: Add a logout button */}
-      <button 
-        onClick={handleLogout}
-        style={{
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          padding: '8px 16px',
-          background: '#f44336',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          zIndex: 1000
-        }}
-      >
-        Logout
-      </button>
+
     </>
   );
 };

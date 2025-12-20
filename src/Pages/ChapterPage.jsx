@@ -488,32 +488,45 @@ export default function ChapterPage() {
           <Link to={`/book/${bookId}`} style={{ textDecoration: "none", color: "inherit" }}>
             <Typography variant="body1">{book?.title || "Book"}</Typography>
           </Link>
-          <Typography 
-            color="primary.main" 
-            fontWeight="medium" 
-            variant="body1"
-            sx={{
-              maxWidth: '300px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+<Typography 
+  color="primary.main" 
+  fontWeight="medium" 
+  variant="body1"
+  sx={{
+    maxWidth: { xs: '200px', sm: '300px', md: '400px' }, // Responsive max width
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: { xs: '0.875rem', sm: '1rem' }, // Smaller on mobile
+  }}
+>
             {/* Format: "Chapter Name (Chapter X)" */}
-            {(() => {
-              const chapterName = currentChapter?.title_en || currentChapter?.title_ar;
-              const chapterNum = currentChapter?.chapter_number;
-              
-              if (chapterName && chapterNum) {
-                return `${chapterName} (Ch. ${chapterNum})`;
-              } else if (chapterName) {
-                return chapterName;
-              } else if (chapterNum) {
-                return `Chapter ${chapterNum}`;
-              }
-              return "Chapter";
-            })()}
-          </Typography>
+  {(() => {
+    const chapterName = currentChapter?.title_en || currentChapter?.title_ar;
+    const chapterNum = currentChapter?.chapter_number;
+    
+    if (chapterName && chapterNum) {
+      // Shorten on mobile
+      if (window.innerWidth < 600) {
+        // Show only first 20 chars on mobile
+        const shortName = chapterName.length > 20 
+          ? chapterName.substring(0, 20) + '...' 
+          : chapterName;
+        return `${shortName} (Ch. ${chapterNum})`;
+      }
+      return `${chapterName} (Ch. ${chapterNum})`;
+    } else if (chapterName) {
+      // Shorten long chapter names on mobile
+      if (window.innerWidth < 600 && chapterName.length > 25) {
+        return chapterName.substring(0, 25) + '...';
+      }
+      return chapterName;
+    } else if (chapterNum) {
+      return `Chapter ${chapterNum}`;
+    }
+    return "Chapter";
+  })()}
+</Typography>
         </Breadcrumbs>
 
         {/* Chapter Header with Integrated Navigation */}
