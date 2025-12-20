@@ -1,6 +1,6 @@
 // Pages/BookReaderPage.jsx
-import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -41,9 +41,14 @@ import Navbar from "../components/Navbar/Navbar.jsx";
 import { supabase } from "../config/supabaseClient.js";
 import { useAuth } from '../contexts/AuthContext';
 import { useBookData } from "../hooks/useBookData.js";
+import { useTheme, useMediaQuery } from "@mui/material";
+
 
 export default function BookReaderPage() {
   const { bookId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
   const {
     book,
     volumes,
@@ -64,6 +69,7 @@ export default function BookReaderPage() {
   const [feedback, setFeedback] = useState({ name: "", email: "", comments: "" });
   const [loadingHadiths, setLoadingHadiths] = useState(false);
   const [hadithsLoadingProgress, setHadithsLoadingProgress] = useState(0);
+  const [changingVolume, setChangingVolume] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -73,6 +79,19 @@ export default function BookReaderPage() {
   // Auth context for saving hadiths
   const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
   const [savedStates, setSavedStates] = useState({});
+
+  // Refs to track scrolling state
+  const hasScrolledToTargetRef = useRef(false);
+  const initialLoadRef = useRef(true);
+  const scrollTimeoutRef = useRef(null);
+  const isProcessingTargetHadithRef = useRef(false);
+
+  // Get target hadith ID from URL only once
+  const targetHadithId = useRef(null);
+  if (targetHadithId.current === null) {
+    const searchParams = new URLSearchParams(location.search);
+    targetHadithId.current = searchParams.get("hadith");
+  }
 
   // Check scroll position for back to top button
   useEffect(() => {
@@ -86,14 +105,40 @@ export default function BookReaderPage() {
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo(0, 0);
+    // Reset refs when component mounts
+    hasScrolledToTargetRef.current = false;
+    initialLoadRef.current = true;
+    isProcessingTargetHadithRef.current = false;
+    
+    return () => {
+      // Clean up timeout on unmount
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
   }, [bookId]);
 
   // Fetch hadiths when chapters are loaded
   useEffect(() => {
-    if (chapters.length > 0) {
+    if (chapters.length > 0 && !changingVolume) {
       fetchAllChapterHadiths();
     }
-  }, [chapters]);
+  }, [chapters, changingVolume]);
+
+  // Reset hadith data when volume changes
+  useEffect(() => {
+    if (selectedVolume && !changingVolume) {
+      // Reset pagination and hadiths when volume changes
+      setCurrentPage(1);
+      setAllHadiths([]);
+      setChapterHadiths({});
+      setCollapsedChapters({});
+      setExpandedArabic({});
+      // Reset scroll tracking
+      hasScrolledToTargetRef.current = false;
+      isProcessingTargetHadithRef.current = false;
+    }
+  }, [selectedVolume, changingVolume]);
 
   // Scroll when page changes
   useEffect(() => {
@@ -111,6 +156,144 @@ export default function BookReaderPage() {
       }, 100);
     }
   }, [currentPage]);
+
+  
+  // Handle target hadith when component loads
+  useEffect(() => {
+    if (targetHadithId.current && !isProcessingTargetHadithRef.current && book && !changingVolume) {
+      handleTargetHadith();
+    }
+  }, [targetHadithId.current, book, volumes, changingVolume]);
+
+  const handleTargetHadith = async () => {
+    if (!targetHadithId.current || isProcessingTargetHadithRef.current) return;
+    
+    isProcessingTargetHadithRef.current = true;
+    
+    try {
+      // First, fetch the hadith to get its chapter
+      const { data: hadithData, error: hadithError } = await supabase
+        .from("hadith")
+        .select("chapter_id")
+        .eq("id", targetHadithId.current)
+        .single();
+      
+      if (hadithError || !hadithData) {
+        console.error("Error fetching hadith:", hadithError);
+        return;
+      }
+      
+      // Then fetch the chapter to get its volume
+      const { data: chapterData, error: chapterError } = await supabase
+        .from("chapters")
+        .select("volume_id")
+        .eq("id", hadithData.chapter_id)
+        .single();
+      
+      if (chapterError || !chapterData) {
+        console.error("Error fetching chapter:", chapterError);
+        return;
+      }
+      
+      // Find the volume that contains this chapter
+      const targetVolumeId = chapterData.volume_id;
+      
+      // If target volume is different from current volume, switch to it
+      if (targetVolumeId && targetVolumeId !== selectedVolume) {
+        // Find the volume in our volumes list
+        const targetVolume = volumes.find(v => v.id === targetVolumeId);
+        if (targetVolume) {
+          console.log("Switching to volume:", targetVolume.volume_number);
+          await handleVolumeChange(targetVolumeId);
+          
+          // Wait for volume to switch and hadiths to load
+          scrollTimeoutRef.current = setTimeout(() => {
+            scrollToTargetHadithAfterLoad();
+          }, 1500);
+          return;
+        }
+      }
+      
+      // If already in correct volume, just wait for hadiths to load
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollToTargetHadithAfterLoad();
+      }, 1000);
+      
+    } catch (error) {
+      console.error("Error handling target hadith:", error);
+      isProcessingTargetHadithRef.current = false;
+    }
+  };
+
+  const scrollToTargetHadithAfterLoad = () => {
+    if (allHadiths.length === 0 || hasScrolledToTargetRef.current || changingVolume) return;
+    
+    const index = allHadiths.findIndex(
+      h => String(h.id) === String(targetHadithId.current)
+    );
+
+    if (index === -1) {
+      // Hadith not found in current volume, try again after delay
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollToTargetHadithAfterLoad();
+      }, 500);
+      return;
+    }
+
+    const page = Math.floor(index / hadithsPerPage) + 1;
+
+    // Set page if needed
+    if (page !== currentPage) {
+      setCurrentPage(page);
+      // Wait for page to render
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollToTargetHadith();
+      }, 500);
+    } else {
+      // Already on correct page
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollToTargetHadith();
+      }, 300);
+    }
+  };
+
+  const scrollToTargetHadith = () => {
+    const el = document.getElementById(`reader-hadith-${targetHadithId.current}`);
+    if (el) {
+      el.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      
+      // Add highlight effect
+      el.style.transition = "background-color 0.5s ease";
+      el.style.backgroundColor = "rgba(255, 243, 205, 0.8)";
+      
+      setTimeout(() => {
+        el.style.backgroundColor = "";
+      }, 2000);
+      
+      // Mark that we've handled the scroll
+      hasScrolledToTargetRef.current = true;
+      isProcessingTargetHadithRef.current = false;
+      
+      // Clean up URL after scroll
+      if (location.search.includes("hadith=")) {
+        navigate(location.pathname, { replace: true });
+      }
+    } else {
+      // Element not found yet, try again
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollToTargetHadith();
+      }, 300);
+    }
+  };
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -194,6 +377,11 @@ export default function BookReaderPage() {
       
     } catch (error) {
       console.error("Error fetching hadiths:", error);
+      setSnackbar({
+        open: true,
+        message: "Failed to load hadiths for this volume",
+        severity: "error"
+      });
     } finally {
       setLoadingHadiths(false);
       setHadithsLoadingProgress(100);
@@ -277,6 +465,66 @@ export default function BookReaderPage() {
     });
     
     return grouped;
+  };
+
+  // Volume change handler - FIXED VERSION
+  const handleVolumeChange = async (newVolumeId) => {
+    // Don't do anything if selecting the same volume
+    if (newVolumeId === selectedVolume) return;
+    
+    setChangingVolume(true);
+    setSelectedVolume(newVolumeId);
+    
+    // Scroll to top when changing volumes
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // Reset all hadith-related states
+    setCurrentPage(1);
+    setAllHadiths([]);
+    setChapterHadiths({});
+    setCollapsedChapters({});
+    setExpandedArabic({});
+    setLoadingHadiths(true);
+    
+    // Reset scroll tracking
+    hasScrolledToTargetRef.current = false;
+    isProcessingTargetHadithRef.current = false;
+    
+    try {
+      // Fetch chapters for the new volume
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("*")
+        .eq("volume_id", newVolumeId)
+        .order("chapter_number", { ascending: true });
+      
+      if (error) {
+        console.error("Error fetching chapters:", error);
+        setSnackbar({
+          open: true,
+          message: "Failed to load chapters for this volume",
+          severity: "error"
+        });
+        return;
+      }
+      
+      setChapters(data || []);
+      
+      // If there are no chapters, we should still show the UI
+      if (!data || data.length === 0) {
+        setLoadingHadiths(false);
+      }
+      
+    } catch (error) {
+      console.error("Error changing volume:", error);
+      setSnackbar({
+        open: true,
+        message: "An error occurred while changing volumes",
+        severity: "error"
+      });
+    } finally {
+      setChangingVolume(false);
+    }
   };
 
   // Save/Unsave hadith function
@@ -409,85 +657,170 @@ export default function BookReaderPage() {
   };
 
   // Pagination Component
-  const PaginationControls = () => {
-    const totalPages = getTotalPages();
+// Simplest fix - just adjust spacing and sizes:
+
+// Pagination Component
+const PaginationControls = () => {
+  const totalPages = getTotalPages();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
+  if (totalPages <= 1) return null;
+  
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+  };
+  
+  // Function to get the 5 page numbers to display, with current page in the middle when possible
+  const getDisplayPages = () => {
+    const pages = [];
+    const maxVisible = 5;
     
-    if (totalPages <= 1) return null;
+    if (totalPages <= maxVisible) {
+      // If total pages is 5 or less, show all pages
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always show first page
+      pages.push(1);
+      
+      // Calculate start and end for the middle pages
+      let start = Math.max(2, currentPage - 2);
+      let end = Math.min(totalPages - 1, currentPage + 2);
+      
+      // Adjust if we're near the beginning
+      if (currentPage <= 3) {
+        start = 2;
+        end = Math.min(totalPages - 1, 5);
+      }
+      
+      // Adjust if we're near the end
+      if (currentPage >= totalPages - 2) {
+        start = Math.max(2, totalPages - 4);
+        end = totalPages - 1;
+      }
+      
+      // Add ellipsis before middle pages if needed
+      if (start > 2) {
+        pages.push('...');
+      }
+      
+      // Add middle pages
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      
+      // Add ellipsis after middle pages if needed
+      if (end < totalPages - 1) {
+        pages.push('...');
+      }
+      
+      // Always show last page
+      pages.push(totalPages);
+    }
     
-    const handlePageChange = (newPage) => {
-      setCurrentPage(newPage);
-    };
-    
-    return (
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 2,
-        my: 4,
-        p: 3,
-        backgroundColor: 'grey.50',
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider'
-      }}>
-        <Button
-          variant="outlined"
-          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-          startIcon={<ArrowForwardIosIcon sx={{ transform: 'rotate(180deg)' }} />}
-        >
-          Previous
-        </Button>
-        
+    return pages;
+  };
+  
+  return (
+    <Box sx={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: isMobile ? 1 : 2,
+      my: isMobile ? 3 : 4,
+      p: isMobile ? 2 : 3,
+      backgroundColor: 'grey.50',
+      borderRadius: 2,
+      border: '1px solid',
+      borderColor: 'divider'
+    }}>
+      <Button
+        variant="outlined"
+        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        size={isMobile ? "small" : "medium"}
+        sx={{
+          minWidth: isMobile ? 'auto' : 100,
+          px: isMobile ? 1.5 : 2,
+        }}
+        startIcon={<ArrowForwardIosIcon sx={{ transform: 'rotate(180deg)' }} />}
+      >
+        {isMobile ? 'Prev' : 'Previous'}
+      </Button>
+      
+      {!isMobile && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            let pageNum;
-            if (totalPages <= 5) {
-              pageNum = i + 1;
-            } else if (currentPage <= 3) {
-              pageNum = i + 1;
-            } else if (currentPage >= totalPages - 2) {
-              pageNum = totalPages - 4 + i;
-            } else {
-              pageNum = currentPage - 2 + i;
-            }
-            
-            return (
-              <Button
-                key={pageNum}
-                variant={currentPage === pageNum ? "contained" : "outlined"}
-                onClick={() => handlePageChange(pageNum)}
-                sx={{
-                  minWidth: 40,
-                  height: 40,
-                  fontWeight: currentPage === pageNum ? 'bold' : 'normal'
+          {getDisplayPages().map((page, index) => (
+            page === '...' ? (
+              <Typography 
+                key={`ellipsis-${index}`}
+                sx={{ 
+                  px: 1,
+                  color: 'text.secondary',
+                  fontSize: '0.875rem'
                 }}
               >
-                {pageNum}
+                …
+              </Typography>
+            ) : (
+              <Button
+                key={page}
+                variant={currentPage === page ? "contained" : "outlined"}
+                onClick={() => handlePageChange(page)}
+                size="small"
+                sx={{
+                  minWidth: 36,
+                  height: 36,
+                  fontWeight: currentPage === page ? 'bold' : 'normal',
+                  '&.MuiButton-contained': {
+                    backgroundColor: 'primary.main',
+                    '&:hover': {
+                      backgroundColor: 'primary.dark',
+                    }
+                  }
+                }}
+              >
+                {page}
               </Button>
-            );
-          })}
+            )
+          ))}
         </Box>
-        
-        <Button
-          variant="outlined"
-          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-          endIcon={<ArrowForwardIosIcon />}
-        >
-          Next
-        </Button>
-        
-        <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+      )}
+      
+      {isMobile && (
+        <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
+          {currentPage} of {totalPages}
+        </Typography>
+      )}
+      
+      <Button
+        variant="outlined"
+        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        size={isMobile ? "small" : "medium"}
+        sx={{
+          minWidth: isMobile ? 'auto' : 100,
+          px: isMobile ? 1.5 : 2,
+        }}
+        endIcon={<ArrowForwardIosIcon />}
+      >
+        {isMobile ? 'Next' : 'Next'}
+      </Button>
+      
+      {!isMobile && (
+        <Typography variant="body2" color="text.secondary" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
           Page {currentPage} of {totalPages}
         </Typography>
-      </Box>
-    );
-  };
+      )}
+    </Box>
+  );
+};
 
-  if (loading) {
+  // Combined loading state
+  if (loading || changingVolume) {
     return (
       <>
         <Navbar />
@@ -507,8 +840,13 @@ export default function BookReaderPage() {
                 <Skeleton variant="text" width="70%" height={48} sx={{ mb: 2 }} />
                 <Skeleton variant="text" width="50%" height={32} sx={{ mb: 3 }} />
                 <Skeleton variant="text" width="30%" height={28} />
+                <Skeleton variant="rectangular" width={200} height={40} sx={{ mt: 4, borderRadius: 1 }} />
               </Box>
             </Stack>
+          </Paper>
+          <Paper sx={{ p: 4, borderRadius: 3 }}>
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 3, borderRadius: 2 }} />
+            <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
           </Paper>
         </Container>
       </>
@@ -613,13 +951,17 @@ export default function BookReaderPage() {
                   </Typography>
                   <FormControl sx={{ minWidth: { xs: 150, sm: 200 } }}>
                     <Select
-                      value={selectedVolume}
-                      onChange={(e) => setSelectedVolume(e.target.value)}
+                      value={selectedVolume || ''}
+                      onChange={(e) => handleVolumeChange(e.target.value)}
+                      disabled={changingVolume}
                       sx={{ 
                         backgroundColor: 'white',
                         fontSize: { xs: '0.875rem', sm: '1rem' },
                         '& .MuiOutlinedInput-notchedOutline': {
                           borderColor: 'primary.main',
+                        },
+                        '&.Mui-disabled': {
+                          backgroundColor: 'grey.50',
                         }
                       }}
                     >
@@ -630,6 +972,7 @@ export default function BookReaderPage() {
                           sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}
                         >
                           Volume {vol.volume_number}
+                          {changingVolume && selectedVolume === vol.id && " (Loading...)"}
                         </MenuItem>
                       ))}
                     </Select>
@@ -980,7 +1323,7 @@ export default function BookReaderPage() {
                                 />
                                 <Divider orientation="vertical" flexItem sx={{ height: 20 }} />
                                 <Typography variant="caption" color="text.secondary">
-                                  #{((currentPage - 1) * hadithsPerPage) + idx + 1} of {allHadiths.length}
+                                  #{((currentPage - 1) * hadithsPerPage) + idx + 1}
                                 </Typography>
                               </Box>
 
