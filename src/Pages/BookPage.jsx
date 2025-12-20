@@ -46,6 +46,8 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import Navbar from "../components/Navbar/Navbar.jsx";
 import { supabase } from "../config/supabaseClient.js";
 import { useAuth } from '../contexts/AuthContext';
+import { useRef } from "react";
+
 
 export default function BookPage() {
   const { bookId } = useParams();
@@ -65,6 +67,12 @@ export default function BookPage() {
   const [feedback, setFeedback] = useState({ name: "", email: "", comments: "" });
   const [loadingHadiths, setLoadingHadiths] = useState(false);
   const [hadithsLoadingProgress, setHadithsLoadingProgress] = useState(0);
+  const containerRef = useRef(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hadithsPerPage] = useState(20);
+  const [allHadiths, setAllHadiths] = useState([]); // Store all hadiths for pagination
   
   // Auth context for saving hadiths
   const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
@@ -79,6 +87,12 @@ export default function BookPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Scroll to top when page changes
+useEffect(() => {
+  if (readerMode) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}, [currentPage, readerMode]);
   // Fetch chapters for selected volume
   useEffect(() => {
     if (!selectedVolume) return;
@@ -131,6 +145,40 @@ export default function BookPage() {
     fetchBook();
   }, [bookId]);
 
+  // Scroll to just above content when page changes
+useEffect(() => {
+  if (readerMode && currentPage > 1) {
+    // Small delay to ensure DOM is updated
+    setTimeout(() => {
+      // Get the chapters section
+      const chaptersSection = document.querySelector('[data-chapters-section]');
+      if (chaptersSection) {
+        // Calculate position 50px above the chapters section
+        const rect = chaptersSection.getBoundingClientRect();
+        const offsetPosition = rect.top + window.pageYOffset - 100; // 100px above
+        
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: "smooth"
+        });
+      } else {
+        // Fallback to top
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }, 100);
+  } else if (readerMode && currentPage === 1) {
+    // For first page, scroll to top of the chapters section
+    setTimeout(() => {
+      const chaptersSection = document.querySelector('[data-chapters-section]');
+      if (chaptersSection) {
+        chaptersSection.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        });
+      }
+    }, 100);
+  }
+}, [currentPage, readerMode]);
   // Fetch volumes & chapters
   useEffect(() => {
     if (!book) return;
@@ -185,88 +233,97 @@ export default function BookPage() {
   };
 
   // Function to fetch hadiths for all chapters in the current volume
-const fetchAllChapterHadiths = async () => {
-  if (!chapters.length) return;
-  
-  setLoadingHadiths(true);
-  setHadithsLoadingProgress(50); // Start at 50%
-  
-  try {
-    // Get all chapter IDs
-    const chapterIds = chapters.map(ch => ch.id);
+  const fetchAllChapterHadiths = async () => {
+    if (!chapters.length) return;
     
-    // Fetch all hadiths for all chapters in one query
-    const { data, error } = await supabase
-      .from("hadith")
-      .select(`
-        id, 
-        hadith_number, 
-        arabic, 
-        english,
-        hadith_reference(reference),
-        chapter_id
-      `)
-      .in("chapter_id", chapterIds)
-      .order("chapter_id", { ascending: true })
-      .order("hadith_number", { ascending: true, nullsFirst: false });
+    setLoadingHadiths(true);
+    setHadithsLoadingProgress(50); // Start at 50%
     
-    if (error) throw error;
-    
-    // Custom sorting function (same as in ChapterPage)
-    const sortHadiths = (hadithsArray) => {
-      return hadithsArray.sort((a, b) => {
-        const parseHadithNumber = (num) => {
-          if (!num) return [0, 0];
-          if (num.includes('/')) {
-            const parts = num.split('/');
-            return [
-              parseInt(parts[0]) || 0,
-              parseInt(parts[1]) || 0
-            ];
-          }
-          return [parseInt(num) || 0, 0];
-        };
+    try {
+      // Get all chapter IDs
+      const chapterIds = chapters.map(ch => ch.id);
+      
+      // Fetch all hadiths for all chapters in one query
+      const { data, error } = await supabase
+        .from("hadith")
+        .select(`
+          id, 
+          hadith_number, 
+          arabic, 
+          english,
+          hadith_reference(reference),
+          chapter_id
+        `)
+        .in("chapter_id", chapterIds)
+        .order("chapter_id", { ascending: true })
+        .order("hadith_number", { ascending: true, nullsFirst: false });
+      
+      if (error) throw error;
+      
+      // Custom sorting function (same as in ChapterPage)
+      const sortHadiths = (hadithsArray) => {
+        return hadithsArray.sort((a, b) => {
+          const parseHadithNumber = (num) => {
+            if (!num) return [0, 0];
+            if (num.includes('/')) {
+              const parts = num.split('/');
+              return [
+                parseInt(parts[0]) || 0,
+                parseInt(parts[1]) || 0
+              ];
+            }
+            return [parseInt(num) || 0, 0];
+          };
 
-        const [aMain, aSub] = parseHadithNumber(a.hadith_number);
-        const [bMain, bSub] = parseHadithNumber(b.hadith_number);
-        
-        if (aMain !== bMain) return aMain - bMain;
-        return aSub - bSub;
+          const [aMain, aSub] = parseHadithNumber(a.hadith_number);
+          const [bMain, bSub] = parseHadithNumber(b.hadith_number);
+          
+          if (aMain !== bMain) return aMain - bMain;
+          return aSub - bSub;
+        });
+      };
+      
+      // Group hadiths by chapter_id and sort each group
+      const hadithsMap = {};
+      const allHadithsArray = []; // Store all hadiths in a flat array
+      
+      chapterIds.forEach(id => hadithsMap[id] = []);
+      
+      data?.forEach(hadith => {
+        if (!hadithsMap[hadith.chapter_id]) {
+          hadithsMap[hadith.chapter_id] = [];
+        }
+        hadithsMap[hadith.chapter_id].push(hadith);
+        allHadithsArray.push(hadith); // Add to flat array
       });
-    };
-    
-    // Group hadiths by chapter_id and sort each group
-    const hadithsMap = {};
-    chapterIds.forEach(id => hadithsMap[id] = []);
-    
-    data?.forEach(hadith => {
-      if (!hadithsMap[hadith.chapter_id]) {
-        hadithsMap[hadith.chapter_id] = [];
+      
+      // Sort hadiths within each chapter
+      for (const chapterId in hadithsMap) {
+        hadithsMap[chapterId] = sortHadiths(hadithsMap[chapterId]);
       }
-      hadithsMap[hadith.chapter_id].push(hadith);
-    });
-    
-    // Sort hadiths within each chapter
-    for (const chapterId in hadithsMap) {
-      hadithsMap[chapterId] = sortHadiths(hadithsMap[chapterId]);
+      
+      // Sort the flat array
+      const sortedAllHadiths = sortHadiths(allHadithsArray);
+      
+      setChapterHadiths(hadithsMap);
+      setAllHadiths(sortedAllHadiths); // Store all hadiths
+      setCurrentPage(1); // Reset to first page when loading new data
+      setHadithsLoadingProgress(100);
+      
+      // Check saved status for all hadiths
+      if (user) {
+        checkAllSavedStatus(hadithsMap);
+      }
+      
+    } catch (error) {
+      console.error("Error fetching hadiths:", error);
+    } finally {
+      setLoadingHadiths(false);
+      setHadithsLoadingProgress(100);
+      setTimeout(() => setHadithsLoadingProgress(0), 500);
     }
-    
-    setChapterHadiths(hadithsMap);
-    setHadithsLoadingProgress(100);
-    
-    // Check saved status for all hadiths
-    if (user) {
-      checkAllSavedStatus(hadithsMap);
-    }
-    
-  } catch (error) {
-    console.error("Error fetching hadiths:", error);
-  } finally {
-    setLoadingHadiths(false);
-    setHadithsLoadingProgress(100);
-    setTimeout(() => setHadithsLoadingProgress(0), 500);
-  }
-};
+  };
+
   // Check saved status for all hadiths
   const checkAllSavedStatus = async (hadithsMap) => {
     if (!user) return;
@@ -315,16 +372,55 @@ const fetchAllChapterHadiths = async () => {
   };
 
   // Function to calculate chapter size based on hadith count
-const getChapterSize = (chapterId) => {
-  const hadiths = chapterHadiths[chapterId] || [];
-  const totalHadiths = hadiths.length;
-  
-  // Calculate dynamic height based on hadith count
-  const baseHeight = 80; // Minimum height
-  const heightPerHadith = 15; // Additional height per hadith
-  
-  return Math.min(baseHeight + (totalHadiths * heightPerHadith), 300);
-};
+  const getChapterSize = (chapterId) => {
+    const hadiths = chapterHadiths[chapterId] || [];
+    const totalHadiths = hadiths.length;
+    
+    // Calculate dynamic height based on hadith count
+    const baseHeight = 80; // Minimum height
+    const heightPerHadith = 15; // Additional height per hadith
+    
+    return Math.min(baseHeight + (totalHadiths * heightPerHadith), 300);
+  };
+
+  // Pagination calculation functions
+  // Calculate paginated hadiths
+  const getPaginatedHadiths = () => {
+    const startIndex = (currentPage - 1) * hadithsPerPage;
+    const endIndex = startIndex + hadithsPerPage;
+    return allHadiths.slice(startIndex, endIndex);
+  };
+
+  // Get total number of pages
+  const getTotalPages = () => {
+    return Math.ceil(allHadiths.length / hadithsPerPage);
+  };
+
+  // Find chapter for a hadith
+  const findChapterForHadith = (hadith) => {
+    return chapters.find(ch => ch.id === hadith.chapter_id);
+  };
+
+  // Group paginated hadiths by chapter for display
+  const getPaginatedHadithsByChapter = () => {
+    const paginatedHadiths = getPaginatedHadiths();
+    const grouped = {};
+    
+    paginatedHadiths.forEach(hadith => {
+      const chapter = findChapterForHadith(hadith);
+      if (chapter && !grouped[chapter.id]) {
+        grouped[chapter.id] = {
+          chapter: chapter,
+          hadiths: []
+        };
+      }
+      if (grouped[chapter.id]) {
+        grouped[chapter.id].hadiths.push(hadith);
+      }
+    });
+    
+    return grouped;
+  };
 
   // Save/Unsave hadith function
   const handleSaveHadith = async (hadithId) => {
@@ -474,11 +570,108 @@ const getChapterSize = (chapterId) => {
     return book?.title || "Unknown Book";
   };
 
+// Pagination Component
+const PaginationControls = () => {
+  const totalPages = getTotalPages();
+  
+  if (totalPages <= 1) return null;
+  
+  // Page change handler
+// Page change handler with scroll to first chapter
+const handlePageChange = (newPage) => {
+  setCurrentPage(newPage);
+  
+  // Small delay to ensure DOM is updated
+  setTimeout(() => {
+    if (readerMode) {
+      // Get the first chapter element on the page
+      const firstChapter = document.querySelector('[data-chapter-header]');
+      if (firstChapter) {
+        firstChapter.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        // Fallback to top if no chapter found
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+  }, 50);
+};
+  return (
+    <Box sx={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 2,
+      my: 4,
+      p: 3,
+      backgroundColor: 'grey.50',
+      borderRadius: 2,
+      border: '1px solid',
+      borderColor: 'divider'
+    }}>
+      <Button
+        variant="outlined"
+        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        startIcon={<ArrowForwardIosIcon sx={{ transform: 'rotate(180deg)' }} />}
+      >
+        Previous
+      </Button>
+      
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+          // Calculate page numbers to show (centered around current page)
+          let pageNum;
+          if (totalPages <= 5) {
+            pageNum = i + 1;
+          } else if (currentPage <= 3) {
+            pageNum = i + 1;
+          } else if (currentPage >= totalPages - 2) {
+            pageNum = totalPages - 4 + i;
+          } else {
+            pageNum = currentPage - 2 + i;
+          }
+          
+          return (
+            <Button
+              key={pageNum}
+              variant={currentPage === pageNum ? "contained" : "outlined"}
+              onClick={() => handlePageChange(pageNum)}
+              sx={{
+                minWidth: 40,
+                height: 40,
+                fontWeight: currentPage === pageNum ? 'bold' : 'normal'
+              }}
+            >
+              {pageNum}
+            </Button>
+          );
+        })}
+      </Box>
+      
+      <Button
+        variant="outlined"
+        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        endIcon={<ArrowForwardIosIcon />}
+      >
+        Next
+      </Button>
+      
+      <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+        Page {currentPage} of {totalPages}
+      </Typography>
+    </Box>
+  );
+};
+
   if (loading) {
     return (
       <>
         <Navbar />
         <Container
+          ref={containerRef} // Add this
+
           maxWidth="lg"
           sx={{
             pt: "calc(64px + 32px)",
@@ -694,6 +887,8 @@ const getChapterSize = (chapterId) => {
             borderColor: "divider",
             overflow: "hidden",
           }}
+            data-chapters-section // Add this
+
         >
           {/* Section Header */}
           <Box sx={{ 
@@ -738,8 +933,8 @@ const getChapterSize = (chapterId) => {
                     sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                   >
                     {chapters.length} chapters
-                    {readerMode && Object.keys(chapterHadiths).length > 0 && 
-                      ` • ${Object.values(chapterHadiths).flat().length} hadiths`
+                    {readerMode && allHadiths.length > 0 && 
+                      ` • ${allHadiths.length} hadiths total`
                     }
                   </Typography>
                 </Stack>
@@ -808,367 +1003,374 @@ const getChapterSize = (chapterId) => {
                 </Box>
               ) : (
                 <Stack spacing={4}>
-                  {chapters.map((ch) => {
-                    const hadiths = chapterHadiths[ch.id] || [];
-                    const isChapterCollapsed = collapsedChapters[ch.id] || false;
-                    const chapterSize = getChapterSize(ch.id);
+                  {/* Pagination Controls at the top */}
+                  <PaginationControls />
+                  
+                  {/* Display paginated hadiths */}
+                  {(() => {
+                    const paginatedGroups = getPaginatedHadithsByChapter();
+                    const chapterIds = Object.keys(paginatedGroups);
                     
-                    return (
-                      <Box key={ch.id}>
-                        {/* Mobile-Friendly Chapter Header */}
-                       <Paper
-  sx={{
-    p: { xs: 2, sm: 2.5, md: 3 },
-    mb: -1,
-    borderRadius: 2,
-    backgroundColor: 'primary.light',
-    color: 'primary.contrastText',
-    position: 'relative',
-    transition: 'all 0.2s ease',
-    // Flex row for List View look
-    display: 'flex', 
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    '&:hover': {
-      boxShadow: 3,
-      transform: 'translateY(-1px)',
-    }
-  }}
->
-  <Box sx={{ 
-    display: 'flex', 
-    alignItems: 'center', 
-    gap: { xs: 1.5, sm: 2 },
-    flex: 1,
-    minWidth: 0 // Allows text to wrap correctly in flex
-  }}>
-    {ch.chapter_number !== 0 && (
-      <Chip
-        label={`Ch. ${ch.chapter_number}`}
-        sx={{
-          backgroundColor: 'white',
-          color: 'primary.main',
-          fontWeight: 'bold',
-          fontSize: { xs: '0.75rem', sm: '0.85rem' },
-          height: { xs: 28, sm: 32 },
-          flexShrink: 0 // Prevent the chip from squishing
-        }}
-      />
-    )}
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Typography 
-        variant="h6" 
-        fontWeight="bold"
-        sx={{ 
-          // Dynamic font sizing that stays readable
-          fontSize: { 
-            xs: '0.95rem', 
-            sm: '1.15rem', 
-            md: '1.3rem' 
-          },
-          lineHeight: 1.3,
-          // Remove truncation, allow full text wrap
-          overflowWrap: 'break-word',
-          wordBreak: 'break-word',
-          display: 'block' 
-        }}
-      >
-        {ch.title_en || ch.title_ar || `Chapter ${ch.chapter_number}`}
-      </Typography>
-      
-      {/* Subtitle logic if needed, showing secondary title below primary */}
-      {(ch.title_en && ch.title_ar) && (
-        <Typography 
-          variant="body2" 
-          sx={{ 
-            mt: 0.5, 
-            opacity: 0.9,
-            fontSize: { xs: '0.75rem', sm: '0.85rem' },
-            fontStyle: 'italic'
-          }}
-        >
-          {ch.title_ar}
-        </Typography>
-      )}
-    </Box>
-  </Box>
-  
-  <IconButton
-    onClick={() => toggleChapterCollapse(ch.id)}
-    sx={{ 
-      ml: 1,
-      color: 'white',
-      backgroundColor: 'rgba(255, 255, 255, 0.15)',
-      flexShrink: 0,
-      '&:hover': {
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-      }
-    }}
-  >
-    {isChapterCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-  </IconButton>
-</Paper>
-                        {/* Hadiths in this chapter - Only show if not collapsed */}
-                        {!isChapterCollapsed && hadiths.length > 0 && (
-                          <Stack spacing={2}>
-                            {hadiths.map((hadith, idx) => (
-                              <Paper
-                                key={hadith.id}
-                                id={`reader-hadith-${hadith.id}`}
-                                sx={{
-                                  p: { xs: 1.5, sm: 2, md: 3 },
-                                  borderRadius: 2,
-                                  borderLeft: '3px solid',
-                                  borderLeftColor: 'primary.main',
-                                  position: 'relative',
-                                  '&:hover': {
-                                    boxShadow: 2,
-                                  }
-                                }}
-                              >
-                                {/* Action Icons in Top Right */}
-                                <Box
+                    return chapterIds.map(chapterId => {
+                      const { chapter, hadiths } = paginatedGroups[chapterId];
+                      const isChapterCollapsed = collapsedChapters[chapter.id] || false;
+                      
+                      return (
+                        <Box key={chapter.id}>
+                          {/* Chapter Header */}
+                          <Paper
+                            sx={{
+                              p: { xs: 2, sm: 2.5, md: 3 },
+                              mb: -1,
+                              borderRadius: 2,
+                              backgroundColor: 'primary.light',
+                              color: 'primary.contrastText',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              display: 'flex', 
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              '&:hover': {
+                                boxShadow: 3,
+                                transform: 'translateY(-1px)',
+                              }
+                            }}
+                              data-chapter-header // Add this attribute
+
+                          >
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: { xs: 1.5, sm: 2 },
+                              flex: 1,
+                              minWidth: 0
+                            }}>
+                              {chapter.chapter_number !== 0 && (
+                                <Chip
+                                  label={`Ch. ${chapter.chapter_number}`}
                                   sx={{
-                                    position: "absolute",
-                                    top: 12,
-                                    right: 12,
-                                    display: "flex",
-                                    gap: 1,
-                                    backgroundColor: "background.paper",
-                                    borderRadius: 2,
-                                    p: 0.5,
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    zIndex: 2,
+                                    backgroundColor: 'white',
+                                    color: 'primary.main',
+                                    fontWeight: 'bold',
+                                    fontSize: { xs: '0.75rem', sm: '0.85rem' },
+                                    height: { xs: 28, sm: 32 },
+                                    flexShrink: 0
+                                  }}
+                                />
+                              )}
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography 
+                                  variant="h6" 
+                                  fontWeight="bold"
+                                  sx={{ 
+                                    fontSize: { 
+                                      xs: '0.95rem', 
+                                      sm: '1.15rem', 
+                                      md: '1.3rem' 
+                                    },
+                                    lineHeight: 1.3,
+                                    overflowWrap: 'break-word',
+                                    wordBreak: 'break-word',
+                                    display: 'block' 
                                   }}
                                 >
-                                  {/* Copy Button */}
-                                  <Tooltip title="Copy Hadith">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => copyHadithFormatted(hadith, ch)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: "primary.main",
-                                        },
-                                      }}
-                                    >
-                                      <ContentCopyIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-
-                                  {/* Save Button */}
-                                  <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleSaveHadith(hadith.id)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: savedStates[hadith.id] ? "error.main" : "warning.main",
-                                        },
-                                      }}
-                                    >
-                                      {savedStates[hadith.id] ? (
-                                        <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
-                                      ) : (
-                                        <BookmarkBorderIcon fontSize="small" />
-                                      )}
-                                    </IconButton>
-                                  </Tooltip>
-
-                                  {/* Feedback Button */}
-                                  <Tooltip title="Report Issue">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFeedbackOpen(hadith)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: "info.main",
-                                        },
-                                      }}
-                                    >
-                                      <FeedbackIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Box>
-
-                                {/* Save Status Indicator */}
-                                <Box sx={{ mb: 1, ml: -1 }}>
-                                  {savedStates[hadith.id] && (
-                                    <Chip
-                                      label="Saved"
-                                      size="small"
-                                      sx={{
-                                        backgroundColor: "warning.light",
-                                        color: "warning.contrastText",
-                                        fontSize: "0.7rem",
-                                        height: 20,
-                                      }}
-                                    />
-                                  )}
-                                </Box>
-
-                                <Box sx={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: 2, 
-                                  mb: 2, 
-                                  pr: 6,
-                                  flexWrap: 'wrap'
-                                }}>
-                                  <Chip
-                                    label={`Hadith ${hadith.hadith_number}`}
-                                    color="primary"
-                                    variant="outlined"
-                                    size="small"
-                                  />
-
-                                  <Divider orientation="vertical" flexItem sx={{ height: 20 }} />
-                                  <Typography variant="caption" color="text.secondary">
-                                    #{idx + 1}
-                                  </Typography>
-                                </Box>
-
-                                {/* Arabic Text with Show More if needed */}
-                                <Paper
-                                  elevation={0}
-                                  sx={{
-                                    p: { xs: 1.5, sm: 2 },
-                                    mb: 2,
-                                    borderRadius: 2,
-                                    backgroundColor: '#f8f9fa',
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    position: 'relative',
-                                  }}
-                                >
-                                  <Typography
-                                    variant="body1"
-                                    sx={{
-                                      fontSize: { xs: '0.95rem', sm: '1.1rem' },
-                                      lineHeight: 1.8,
-                                      direction: 'rtl',
-                                      textAlign: 'right',
-                                      fontFamily: 'inherit',
-                                      fontWeight: 500,
+                                  {chapter.title_en || chapter.title_ar || `Chapter ${chapter.chapter_number}`}
+                                </Typography>
+                                
+                                {(chapter.title_en && chapter.title_ar) && (
+                                  <Typography 
+                                    variant="body2" 
+                                    sx={{ 
+                                      mt: 0.5, 
+                                      opacity: 0.9,
+                                      fontSize: { xs: '0.75rem', sm: '0.85rem' },
+                                      fontStyle: 'italic'
                                     }}
                                   >
-                                    {expandedArabic[hadith.id] ? hadith.arabic : truncateArabic(hadith.arabic)}
+                                    {chapter.title_ar}
                                   </Typography>
-                                  
-                                  {/* Show More/Less button for long Arabic text only */}
-                                  {isArabicLong(hadith.arabic) && (
-                                    <Box sx={{ mt: 2, textAlign: 'center' }}>
-                                      <Button
-                                        variant="text"
+                                )}
+                              </Box>
+                            </Box>
+                            
+                            <IconButton
+                              onClick={() => toggleChapterCollapse(chapter.id)}
+                              sx={{ 
+                                ml: 1,
+                                color: 'white',
+                                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                                flexShrink: 0,
+                                '&:hover': {
+                                  backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                                }
+                              }}
+                            >
+                              {isChapterCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                            </IconButton>
+                          </Paper>
+                          
+                          {/* Hadiths in this chapter - Only show if not collapsed */}
+                          {!isChapterCollapsed && hadiths.length > 0 && (
+                            <Stack spacing={2}>
+                              {hadiths.map((hadith, idx) => (
+                                <Paper
+                                  key={hadith.id}
+                                  id={`reader-hadith-${hadith.id}`}
+                                  sx={{
+                                    p: { xs: 1.5, sm: 2, md: 3 },
+                                    borderRadius: 2,
+                                    borderLeft: '3px solid',
+                                    borderLeftColor: 'primary.main',
+                                    position: 'relative',
+                                    '&:hover': {
+                                      boxShadow: 2,
+                                    }
+                                  }}
+                                >
+                                  {/* Action Icons in Top Right */}
+                                  <Box
+                                    sx={{
+                                      position: "absolute",
+                                      top: 12,
+                                      right: 12,
+                                      display: "flex",
+                                      gap: 1,
+                                      backgroundColor: "background.paper",
+                                      borderRadius: 2,
+                                      p: 0.5,
+                                      border: "1px solid",
+                                      borderColor: "divider",
+                                      zIndex: 2,
+                                    }}
+                                  >
+                                    {/* Copy Button */}
+                                    <Tooltip title="Copy Hadith">
+                                      <IconButton
                                         size="small"
-                                        onClick={() => toggleArabicExpand(hadith.id)}
+                                        onClick={() => copyHadithFormatted(hadith, chapter)}
                                         sx={{
-                                          color: 'primary.main',
-                                          fontWeight: 500,
-                                          fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                                          '&:hover': {
-                                            backgroundColor: 'primary.light',
-                                          }
+                                          "&:hover": {
+                                            color: "primary.main",
+                                          },
                                         }}
                                       >
-                                        {expandedArabic[hadith.id] ? 'Show Less Arabic' : 'Show More Arabic'}
-                                        {expandedArabic[hadith.id] ? (
-                                          <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14 }} />
+                                        <ContentCopyIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+
+                                    {/* Save Button */}
+                                    <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleSaveHadith(hadith.id)}
+                                        sx={{
+                                          "&:hover": {
+                                            color: savedStates[hadith.id] ? "error.main" : "warning.main",
+                                          },
+                                        }}
+                                      >
+                                        {savedStates[hadith.id] ? (
+                                          <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
                                         ) : (
-                                          <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14, transform: 'rotate(180deg)' }} />
+                                          <BookmarkBorderIcon fontSize="small" />
                                         )}
-                                      </Button>
+                                      </IconButton>
+                                    </Tooltip>
+
+                                    {/* Feedback Button */}
+                                    <Tooltip title="Report Issue">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleFeedbackOpen(hadith)}
+                                        sx={{
+                                          "&:hover": {
+                                            color: "info.main",
+                                          },
+                                        }}
+                                      >
+                                        <FeedbackIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
+
+                                  {/* Save Status Indicator */}
+                                  <Box sx={{ mb: 1, ml: -1 }}>
+                                    {savedStates[hadith.id] && (
+                                      <Chip
+                                        label="Saved"
+                                        size="small"
+                                        sx={{
+                                          backgroundColor: "warning.light",
+                                          color: "warning.contrastText",
+                                          fontSize: "0.7rem",
+                                          height: 20,
+                                        }}
+                                      />
+                                    )}
+                                  </Box>
+
+                                  <Box sx={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: 2, 
+                                    mb: 2, 
+                                    pr: 6,
+                                    flexWrap: 'wrap'
+                                  }}>
+                                    <Chip
+                                      label={`Hadith ${hadith.hadith_number}`}
+                                      color="primary"
+                                      variant="outlined"
+                                      size="small"
+                                    />
+
+                                    <Divider orientation="vertical" flexItem sx={{ height: 20 }} />
+                                    <Typography variant="caption" color="text.secondary">
+                                      #{((currentPage - 1) * hadithsPerPage) + idx + 1} of {allHadiths.length}
+                                    </Typography>
+                                  </Box>
+
+                                  {/* Arabic Text with Show More if needed */}
+                                  <Paper
+                                    elevation={0}
+                                    sx={{
+                                      p: { xs: 1.5, sm: 2 },
+                                      mb: 2,
+                                      borderRadius: 2,
+                                      backgroundColor: '#f8f9fa',
+                                      border: '1px solid',
+                                      borderColor: 'divider',
+                                      position: 'relative',
+                                    }}
+                                  >
+                                    <Typography
+                                      variant="body1"
+                                      sx={{
+                                        fontSize: { xs: '0.95rem', sm: '1.1rem' },
+                                        lineHeight: 1.8,
+                                        direction: 'rtl',
+                                        textAlign: 'right',
+                                        fontFamily: 'inherit',
+                                        fontWeight: 500,
+                                      }}
+                                    >
+                                      {expandedArabic[hadith.id] ? hadith.arabic : truncateArabic(hadith.arabic)}
+                                    </Typography>
+                                    
+                                    {/* Show More/Less button for long Arabic text only */}
+                                    {isArabicLong(hadith.arabic) && (
+                                      <Box sx={{ mt: 2, textAlign: 'center' }}>
+                                        <Button
+                                          variant="text"
+                                          size="small"
+                                          onClick={() => toggleArabicExpand(hadith.id)}
+                                          sx={{
+                                            color: 'primary.main',
+                                            fontWeight: 500,
+                                            fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                                            '&:hover': {
+                                              backgroundColor: 'primary.light',
+                                            }
+                                          }}
+                                        >
+                                          {expandedArabic[hadith.id] ? 'Show Less Arabic' : 'Show More Arabic'}
+                                          {expandedArabic[hadith.id] ? (
+                                            <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14 }} />
+                                          ) : (
+                                            <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14, transform: 'rotate(180deg)' }} />
+                                          )}
+                                        </Button>
+                                      </Box>
+                                    )}
+                                  </Paper>
+
+                                  {/* English Translation - Always show full */}
+                                  <Paper
+                                    elevation={0}
+                                    sx={{
+                                      p: { xs: 1.5, sm: 2 },
+                                      mb: 2,
+                                      borderRadius: 2,
+                                      backgroundColor: 'white',
+                                      border: '1px solid',
+                                      borderColor: 'divider',
+                                    }}
+                                  >
+                                    <Typography
+                                      variant="body1"
+                                      color="text.primary"
+                                      sx={{
+                                        lineHeight: 1.7,
+                                        whiteSpace: 'pre-line',
+                                        fontSize: { xs: '0.9rem', sm: '1rem' },
+                                      }}
+                                    >
+                                      {hadith.english}
+                                    </Typography>
+                                  </Paper>
+
+                                  {/* Reference */}
+                                  {hadith.hadith_reference?.reference && (
+                                    <Typography 
+                                      variant="body2" 
+                                      color="text.secondary"
+                                      sx={{ 
+                                        fontStyle: 'italic', 
+                                        mt: 1,
+                                        fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                                      }}
+                                    >
+                                      Reference: {hadith.hadith_reference.reference}
+                                    </Typography>
+                                  )}
+
+                                  {/* Login Prompt for non-logged in users */}
+                                  {!user && (
+                                    <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+                                      <Typography variant="body2" color="text.secondary" align="center">
+                                        Want to save this hadith?{' '}
+                                        <Button
+                                          size="small"
+                                          variant="text"
+                                          component={Link}
+                                          to="/login"
+                                          sx={{ 
+                                            textTransform: 'none', 
+                                            fontWeight: 'bold',
+                                            fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                                          }}
+                                        >
+                                          Login or Sign Up
+                                        </Button>
+                                      </Typography>
                                     </Box>
                                   )}
                                 </Paper>
+                              ))}
+                            </Stack>
+                          )}
 
-                                {/* English Translation - Always show full */}
-                                <Paper
-                                  elevation={0}
-                                  sx={{
-                                    p: { xs: 1.5, sm: 2 },
-                                    mb: 2,
-                                    borderRadius: 2,
-                                    backgroundColor: 'white',
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                  }}
-                                >
-                                  <Typography
-                                    variant="body1"
-                                    color="text.primary"
-                                    sx={{
-                                      lineHeight: 1.7,
-                                      whiteSpace: 'pre-line',
-                                      fontSize: { xs: '0.9rem', sm: '1rem' },
-                                    }}
-                                  >
-                                    {hadith.english}
-                                  </Typography>
-                                </Paper>
-
-                                {/* Reference */}
-                                {hadith.hadith_reference?.reference && (
-                                  <Typography 
-                                    variant="body2" 
-                                    color="text.secondary"
-                                    sx={{ 
-                                      fontStyle: 'italic', 
-                                      mt: 1,
-                                      fontSize: { xs: '0.8rem', sm: '0.875rem' }
-                                    }}
-                                  >
-                                    Reference: {hadith.hadith_reference.reference}
-                                  </Typography>
-                                )}
-
-                                {/* Login Prompt for non-logged in users */}
-                                {!user && (
-                                  <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
-                                    <Typography variant="body2" color="text.secondary" align="center">
-                                      Want to save this hadith?{' '}
-                                      <Button
-                                        size="small"
-                                        variant="text"
-                                        component={Link}
-                                        to="/login"
-                                        sx={{ 
-                                          textTransform: 'none', 
-                                          fontWeight: 'bold',
-                                          fontSize: { xs: '0.75rem', sm: '0.875rem' }
-                                        }}
-                                      >
-                                        Login or Sign Up
-                                      </Button>
-                                    </Typography>
-                                  </Box>
-                                )}
-                              </Paper>
-                            ))}
-                          </Stack>
-                        )}
-
-                        {/* Collapsed Chapter Message */}
-
-
-                        {!isChapterCollapsed && hadiths.length === 0 && (
-                          <Paper
-                            sx={{
-                              p: 4,
-                              textAlign: 'center',
-                              borderRadius: 2,
-                              backgroundColor: 'grey.50',
-                            }}
-                          >
-                            <Typography variant="body1" color="text.secondary">
-                              No hadiths found in this chapter.
-                            </Typography>
-                          </Paper>
-                        )}
-                      </Box>
-                    );
-                  })}
+                          {!isChapterCollapsed && hadiths.length === 0 && (
+                            <Paper
+                              sx={{
+                                p: 4,
+                                textAlign: 'center',
+                                borderRadius: 2,
+                                backgroundColor: 'grey.50',
+                              }}
+                            >
+                              <Typography variant="body1" color="text.secondary">
+                                No hadiths found in this chapter.
+                              </Typography>
+                            </Paper>
+                          )}
+                        </Box>
+                      );
+                    });
+                  })()}
+                  
+                  {/* Pagination Controls at the bottom */}
+                  <PaginationControls />
                 </Stack>
               )}
             </Box>
@@ -1327,7 +1529,7 @@ const getChapterSize = (chapterId) => {
                   {readerMode ? (
                     loadingHadiths 
                       ? 'Loading hadiths from all chapters...' 
-                      : 'Scroll to read all hadiths continuously • Click chapter headers to collapse/expand'
+                      : `Showing ${getPaginatedHadiths().length} hadiths on page ${currentPage} of ${getTotalPages()} • Total ${allHadiths.length} hadiths`
                   ) : (
                     `Showing ${chapters.length} chapters • Click any chapter to read`
                   )}
