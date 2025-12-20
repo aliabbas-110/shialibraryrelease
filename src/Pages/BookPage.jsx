@@ -208,11 +208,34 @@ const fetchAllChapterHadiths = async () => {
       `)
       .in("chapter_id", chapterIds)
       .order("chapter_id", { ascending: true })
-      .order("hadith_number", { ascending: true });
+      .order("hadith_number", { ascending: true, nullsFirst: false });
     
     if (error) throw error;
     
-    // Group hadiths by chapter_id
+    // Custom sorting function (same as in ChapterPage)
+    const sortHadiths = (hadithsArray) => {
+      return hadithsArray.sort((a, b) => {
+        const parseHadithNumber = (num) => {
+          if (!num) return [0, 0];
+          if (num.includes('/')) {
+            const parts = num.split('/');
+            return [
+              parseInt(parts[0]) || 0,
+              parseInt(parts[1]) || 0
+            ];
+          }
+          return [parseInt(num) || 0, 0];
+        };
+
+        const [aMain, aSub] = parseHadithNumber(a.hadith_number);
+        const [bMain, bSub] = parseHadithNumber(b.hadith_number);
+        
+        if (aMain !== bMain) return aMain - bMain;
+        return aSub - bSub;
+      });
+    };
+    
+    // Group hadiths by chapter_id and sort each group
     const hadithsMap = {};
     chapterIds.forEach(id => hadithsMap[id] = []);
     
@@ -222,6 +245,11 @@ const fetchAllChapterHadiths = async () => {
       }
       hadithsMap[hadith.chapter_id].push(hadith);
     });
+    
+    // Sort hadiths within each chapter
+    for (const chapterId in hadithsMap) {
+      hadithsMap[chapterId] = sortHadiths(hadithsMap[chapterId]);
+    }
     
     setChapterHadiths(hadithsMap);
     setHadithsLoadingProgress(100);
