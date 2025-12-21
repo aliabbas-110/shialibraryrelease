@@ -69,6 +69,7 @@ export default function ChapterPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  
   // Fetch book details
   useEffect(() => {
     const fetchBook = async () => {
