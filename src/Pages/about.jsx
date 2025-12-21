@@ -15,8 +15,51 @@ import {
 import { Link } from "react-router-dom";
 import HomeIcon from "@mui/icons-material/Home";
 import InfoIcon from "@mui/icons-material/Info";
+import { TextField, Button, Alert } from "@mui/material";
+import { useState } from "react";
+import { supabase } from "../config/supabaseClient.js";
+
 
 export function About() {
+
+    const [form, setForm] = useState({
+  name: "",
+  email: "",
+  message: "",
+});
+
+const [loading, setLoading] = useState(false);
+const [success, setSuccess] = useState(false);
+const [error, setError] = useState("");
+
+const handleSubmit = async () => {
+  setLoading(true);
+  setError("");
+  setSuccess(false);
+
+  const { error } = await supabase.functions.invoke("send-feedback", {
+    body: {
+      type: "about",
+      feedback: {
+        name: form.name,
+        email: form.email,
+        comments: form.message,
+      },
+      pageUrl: window.location.href,
+    },
+  });
+
+  if (error) {
+    setError("Failed to send message. Please try again.");
+  } else {
+    setSuccess(true);
+    setForm({ name: "", email: "", message: "" });
+  }
+
+  setLoading(false);
+};
+
+
   return (
     <ThemeProvider theme={theme}>
       <Navbar />
@@ -115,7 +158,7 @@ export function About() {
                   direction: 'rtl',
                   textAlign: 'center',
                   fontFamily: 'inherit',
-                  fontSize: { xs: '1.3rem', md: '1.5rem' },
+                  fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.5rem' }, /* Reduced mobile size */
                   lineHeight: 2,
                   color: 'primary.dark',
                   fontWeight: 600,
@@ -304,12 +347,71 @@ export function About() {
             </Paper>
           </Paper>
 
-          {/* Call to Action */}
+          {/* Contact Us Form */}
           <Paper
             elevation={0}
             sx={{
               p: { xs: 3, md: 4 },
+              borderRadius: 3,
+              border: "1px solid",
+              borderColor: "divider",
+              backgroundColor: "#fafafa",
               mt: 6,
+            }}
+          >
+            <Typography variant="h5" fontWeight="bold" gutterBottom>
+              Contact Us
+            </Typography>
+
+            <Typography variant="body2" color="text.secondary" mb={3}>
+              For corrections, suggestions, or general enquiries regarding the project.
+            </Typography>
+
+            <Stack spacing={2}>
+              <TextField
+                label="Name"
+                fullWidth
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+
+              <TextField
+                label="Email"
+                type="email"
+                fullWidth
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+
+              <TextField
+                label="Message"
+                multiline
+                minRows={4}
+                fullWidth
+                value={form.message}
+                onChange={(e) => setForm({ ...form, message: e.target.value })}
+              />
+
+              {success && <Alert severity="success">Message sent successfully.</Alert>}
+              {error && <Alert severity="error">{error}</Alert>}
+
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? "Sending..." : "Send Message"}
+              </Button>
+            </Stack>
+          </Paper>
+
+          {/* Call to Action - WITH ADDED SPACE */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 3, md: 4 },
+              mt: 4, /* Added space before this section */
               borderRadius: 3,
               backgroundColor: 'primary.light',
               color: 'primary.contrastText',
