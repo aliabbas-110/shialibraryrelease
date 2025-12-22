@@ -321,31 +321,9 @@ export default function BookReaderPage() {
         `)
         .in("chapter_id", chapterIds)
         .order("chapter_id", { ascending: true })
-        .order("hadith_number", { ascending: true, nullsFirst: false });
+        .order("id", { ascending: true }); // Changed from hadith_number to id
       
       if (error) throw error;
-      
-      const sortHadiths = (hadithsArray) => {
-        return hadithsArray.sort((a, b) => {
-          const parseHadithNumber = (num) => {
-            if (!num) return [0, 0];
-            if (num.includes('/')) {
-              const parts = num.split('/');
-              return [
-                parseInt(parts[0]) || 0,
-                parseInt(parts[1]) || 0
-              ];
-            }
-            return [parseInt(num) || 0, 0];
-          };
-
-          const [aMain, aSub] = parseHadithNumber(a.hadith_number);
-          const [bMain, bSub] = parseHadithNumber(b.hadith_number);
-          
-          if (aMain !== bMain) return aMain - bMain;
-          return aSub - bSub;
-        });
-      };
       
       const hadithsMap = {};
       const allHadithsArray = [];
@@ -360,11 +338,13 @@ export default function BookReaderPage() {
         allHadithsArray.push(hadith);
       });
       
+      // Sort each chapter's hadiths by id (ascending)
       for (const chapterId in hadithsMap) {
-        hadithsMap[chapterId] = sortHadiths(hadithsMap[chapterId]);
+        hadithsMap[chapterId] = hadithsMap[chapterId].sort((a, b) => a.id - b.id);
       }
       
-      const sortedAllHadiths = sortHadiths(allHadithsArray);
+      // Sort all hadiths by id (ascending)
+      const sortedAllHadiths = allHadithsArray.sort((a, b) => a.id - b.id);
       
       setChapterHadiths(hadithsMap);
       setAllHadiths(sortedAllHadiths);
@@ -657,167 +637,164 @@ export default function BookReaderPage() {
   };
 
   // Pagination Component
-// Simplest fix - just adjust spacing and sizes:
-
-// Pagination Component
-const PaginationControls = () => {
-  const totalPages = getTotalPages();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  
-  if (totalPages <= 1) return null;
-  
-  const handlePageChange = (newPage) => {
-    setCurrentPage(newPage);
-  };
-  
-  // Function to get the 5 page numbers to display, with current page in the middle when possible
-  const getDisplayPages = () => {
-    const pages = [];
-    const maxVisible = 5;
+  const PaginationControls = () => {
+    const totalPages = getTotalPages();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     
-    if (totalPages <= maxVisible) {
-      // If total pages is 5 or less, show all pages
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-    } else {
-      // Always show first page
-      pages.push(1);
-      
-      // Calculate start and end for the middle pages
-      let start = Math.max(2, currentPage - 2);
-      let end = Math.min(totalPages - 1, currentPage + 2);
-      
-      // Adjust if we're near the beginning
-      if (currentPage <= 3) {
-        start = 2;
-        end = Math.min(totalPages - 1, 5);
-      }
-      
-      // Adjust if we're near the end
-      if (currentPage >= totalPages - 2) {
-        start = Math.max(2, totalPages - 4);
-        end = totalPages - 1;
-      }
-      
-      // Add ellipsis before middle pages if needed
-      if (start > 2) {
-        pages.push('...');
-      }
-      
-      // Add middle pages
-      for (let i = start; i <= end; i++) {
-        pages.push(i);
-      }
-      
-      // Add ellipsis after middle pages if needed
-      if (end < totalPages - 1) {
-        pages.push('...');
-      }
-      
-      // Always show last page
-      pages.push(totalPages);
-    }
+    if (totalPages <= 1) return null;
     
-    return pages;
-  };
-  
-  return (
-    <Box sx={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: isMobile ? 1 : 2,
-      my: isMobile ? 3 : 4,
-      p: isMobile ? 2 : 3,
-      backgroundColor: 'grey.50',
-      borderRadius: 2,
-      border: '1px solid',
-      borderColor: 'divider'
-    }}>
-      <Button
-        variant="outlined"
-        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-        disabled={currentPage === 1}
-        size={isMobile ? "small" : "medium"}
-        sx={{
-          minWidth: isMobile ? 'auto' : 100,
-          px: isMobile ? 1.5 : 2,
-        }}
-        startIcon={<ArrowForwardIosIcon sx={{ transform: 'rotate(180deg)' }} />}
-      >
-        {isMobile ? 'Prev' : 'Previous'}
-      </Button>
+    const handlePageChange = (newPage) => {
+      setCurrentPage(newPage);
+    };
+    
+    // Function to get the 5 page numbers to display, with current page in the middle when possible
+    const getDisplayPages = () => {
+      const pages = [];
+      const maxVisible = 5;
       
-      {!isMobile && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {getDisplayPages().map((page, index) => (
-            page === '...' ? (
-              <Typography 
-                key={`ellipsis-${index}`}
-                sx={{ 
-                  px: 1,
-                  color: 'text.secondary',
-                  fontSize: '0.875rem'
-                }}
-              >
-                …
-              </Typography>
-            ) : (
-              <Button
-                key={page}
-                variant={currentPage === page ? "contained" : "outlined"}
-                onClick={() => handlePageChange(page)}
-                size="small"
-                sx={{
-                  minWidth: 36,
-                  height: 36,
-                  fontWeight: currentPage === page ? 'bold' : 'normal',
-                  '&.MuiButton-contained': {
-                    backgroundColor: 'primary.main',
-                    '&:hover': {
-                      backgroundColor: 'primary.dark',
+      if (totalPages <= maxVisible) {
+        // If total pages is 5 or less, show all pages
+        for (let i = 1; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        // Always show first page
+        pages.push(1);
+        
+        // Calculate start and end for the middle pages
+        let start = Math.max(2, currentPage - 2);
+        let end = Math.min(totalPages - 1, currentPage + 2);
+        
+        // Adjust if we're near the beginning
+        if (currentPage <= 3) {
+          start = 2;
+          end = Math.min(totalPages - 1, 5);
+        }
+        
+        // Adjust if we're near the end
+        if (currentPage >= totalPages - 2) {
+          start = Math.max(2, totalPages - 4);
+          end = totalPages - 1;
+        }
+        
+        // Add ellipsis before middle pages if needed
+        if (start > 2) {
+          pages.push('...');
+        }
+        
+        // Add middle pages
+        for (let i = start; i <= end; i++) {
+          pages.push(i);
+        }
+        
+        // Add ellipsis after middle pages if needed
+        if (end < totalPages - 1) {
+          pages.push('...');
+        }
+        
+        // Always show last page
+        pages.push(totalPages);
+      }
+      
+      return pages;
+    };
+    
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: isMobile ? 1 : 2,
+        my: isMobile ? 3 : 4,
+        p: isMobile ? 2 : 3,
+        backgroundColor: 'grey.50',
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider'
+      }}>
+        <Button
+          variant="outlined"
+          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          size={isMobile ? "small" : "medium"}
+          sx={{
+            minWidth: isMobile ? 'auto' : 100,
+            px: isMobile ? 1.5 : 2,
+          }}
+          startIcon={<ArrowForwardIosIcon sx={{ transform: 'rotate(180deg)' }} />}
+        >
+          {isMobile ? 'Prev' : 'Previous'}
+        </Button>
+        
+        {!isMobile && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {getDisplayPages().map((page, index) => (
+              page === '...' ? (
+                <Typography 
+                  key={`ellipsis-${index}`}
+                  sx={{ 
+                    px: 1,
+                    color: 'text.secondary',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  …
+                </Typography>
+              ) : (
+                <Button
+                  key={page}
+                  variant={currentPage === page ? "contained" : "outlined"}
+                  onClick={() => handlePageChange(page)}
+                  size="small"
+                  sx={{
+                    minWidth: 36,
+                    height: 36,
+                    fontWeight: currentPage === page ? 'bold' : 'normal',
+                    '&.MuiButton-contained': {
+                      backgroundColor: 'primary.main',
+                      '&:hover': {
+                        backgroundColor: 'primary.dark',
+                      }
                     }
-                  }
-                }}
-              >
-                {page}
-              </Button>
-            )
-          ))}
-        </Box>
-      )}
-      
-      {isMobile && (
-        <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
-          {currentPage} of {totalPages}
-        </Typography>
-      )}
-      
-      <Button
-        variant="outlined"
-        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-        disabled={currentPage === totalPages}
-        size={isMobile ? "small" : "medium"}
-        sx={{
-          minWidth: isMobile ? 'auto' : 100,
-          px: isMobile ? 1.5 : 2,
-        }}
-        endIcon={<ArrowForwardIosIcon />}
-      >
-        {isMobile ? 'Next' : 'Next'}
-      </Button>
-      
-      {!isMobile && (
-        <Typography variant="body2" color="text.secondary" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
-          Page {currentPage} of {totalPages}
-        </Typography>
-      )}
-    </Box>
-  );
-};
+                  }}
+                >
+                  {page}
+                </Button>
+              )
+            ))}
+          </Box>
+        )}
+        
+        {isMobile && (
+          <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
+            {currentPage} of {totalPages}
+          </Typography>
+        )}
+        
+        <Button
+          variant="outlined"
+          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          size={isMobile ? "small" : "medium"}
+          sx={{
+            minWidth: isMobile ? 'auto' : 100,
+            px: isMobile ? 1.5 : 2,
+          }}
+          endIcon={<ArrowForwardIosIcon />}
+        >
+          {isMobile ? 'Next' : 'Next'}
+        </Button>
+        
+        {!isMobile && (
+          <Typography variant="body2" color="text.secondary" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
+            Page {currentPage} of {totalPages}
+          </Typography>
+        )}
+      </Box>
+    );
+  };
 
   // Combined loading state
   if (loading || changingVolume) {
