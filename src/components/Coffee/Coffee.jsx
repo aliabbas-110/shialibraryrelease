@@ -23,6 +23,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import InfoIcon from '@mui/icons-material/Info';
 import PersonIcon from '@mui/icons-material/Person';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import PublicIcon from '@mui/icons-material/Public'; // Added icon for General category
 
 export default function HomePage() {
   const [books, setBooks] = useState([]);
@@ -77,10 +78,17 @@ export default function HomePage() {
 
   const handleChange = (event, newValue) => setCategory(newValue);
   const filteredBooks = books.filter(book => book.category === category);
-  const categories = ['Fazail', 'Ahkam'];
+  const categories = ['Fazail', 'Ahkam', 'General']; // Added General category
   const categoryDescriptions = {
     'Fazail': 'Books about the virtues and merits of the 14 Infallibles a.s',
-    'Ahkam': 'Books about Islamic rulings'
+    'Ahkam': 'Books about Islamic rulings',
+    'General': 'Books on general Islamic topics, history, and miscellaneous subjects' // Added description
+  };
+
+  const categoryIcons = {
+    'Fazail': <MenuBookIcon sx={{ mr: 1 }} />,
+    'Ahkam': <MenuBookIcon sx={{ mr: 1 }} />,
+    'General': <PublicIcon sx={{ mr: 1 }} /> // Added icon for General
   };
 
   return (
@@ -88,6 +96,7 @@ export default function HomePage() {
       <Navbar />
       <Container sx={{ mt: "30px", mb: 8, maxWidth: "lg" }}>
         {/* Breadcrumb Navigation */}
+
 
         {/* Category Tabs Section */}
         <Paper
@@ -101,7 +110,6 @@ export default function HomePage() {
             borderColor: 'divider',
           }}
         >
-          {/* Category Header */}
 
 
           {/* Category Tabs */}
@@ -145,7 +153,7 @@ export default function HomePage() {
                   key={cat} 
                   label={cat} 
                   value={cat}
-                  icon={<MenuBookIcon sx={{ mr: 1 }} />}
+                  icon={categoryIcons[cat]}
                   iconPosition="start"
                 />
               ))}
@@ -175,7 +183,7 @@ export default function HomePage() {
             </Box>
           )}
 
-          {/* Books Grid - FIXED: Added Grid container properties */}
+          {/* Books Grid */}
           {loading ? (
             <Grid container spacing={3}>
               {Array.from(new Array(6)).map((_, idx) => (
@@ -203,7 +211,7 @@ export default function HomePage() {
                   sm={6} 
                   md={4} 
                   key={book.id}
-                  sx={{ display: 'flex' }} // FIX: This makes each Grid item a flex container
+                  sx={{ display: 'flex' }}
                 >
                   <Paper
                     component={Link}
@@ -211,7 +219,7 @@ export default function HomePage() {
                     sx={{
                       display: 'flex',
                       flexDirection: 'column',
-                      width: '100%', // FIX: Take full width of Grid item
+                      width: '100%',
                       p: 3,
                       borderRadius: 3,
                       cursor: 'pointer',
@@ -378,6 +386,9 @@ export default function HomePage() {
               </Typography>
               <Typography variant="body1" color="text.primary">
                 <strong>{books.filter(b => b.category === 'Ahkam').length}</strong> Ahkam Books
+              </Typography>
+              <Typography variant="body1" color="text.primary">
+                <strong>{books.filter(b => b.category === 'General').length}</strong> General Books
               </Typography>
             </Stack>
           </Paper>
