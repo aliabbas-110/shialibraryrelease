@@ -1,5 +1,5 @@
-// Pages/BookReaderPage.jsx
-import { useEffect, useState, useRef } from "react";
+// Pages/BookReaderPage.jsx - CLEAN VERSION
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -43,6 +43,23 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBookData } from "../hooks/useBookData.js";
 import { useTheme, useMediaQuery } from "@mui/material";
 
+// Helper function to estimate content height
+const estimateHadithHeight = (hadith) => {
+  if (!hadith) return 0;
+  
+  // Calculate approximate height based on content length
+  let height = 300; // Base height for UI elements
+  
+  // Add height for Arabic text
+  const arabicLength = hadith.arabic?.length || 0;
+  height += Math.ceil(arabicLength / 100) * 25;
+  
+  // Add height for English text
+  const englishLength = hadith.english?.length || 0;
+  height += Math.ceil(englishLength / 150) * 25;
+  
+  return height;
+};
 
 export default function BookReaderPage() {
   const { bookId } = useParams();
@@ -66,18 +83,29 @@ export default function BookReaderPage() {
   const [collapsedChapters, setCollapsedChapters] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
   const [feedbackDialog, setFeedbackDialog] = useState({ open: false, hadith: null });
-  const [feedback, setFeedback] = useState({ name: "", email: "", comments: "" });
+  
+  // Initialize feedback with user email if available
+  const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
+  const [feedback, setFeedback] = useState({ 
+    name: user?.user_metadata?.full_name || "", 
+    email: user?.email || "", 
+    comments: "" 
+  });
+  
   const [loadingHadiths, setLoadingHadiths] = useState(false);
   const [hadithsLoadingProgress, setHadithsLoadingProgress] = useState(0);
   const [changingVolume, setChangingVolume] = useState(false);
   
-  // Pagination state
+  // Dynamic pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [hadithsPerPage] = useState(20);
+  const [pages, setPages] = useState([]);
   const [allHadiths, setAllHadiths] = useState([]);
   
-  // Auth context for saving hadiths
-  const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
+  // Constants for dynamic pagination
+  const MAX_PAGE_HEIGHT = 20000; // Approximate pixels (adjust based on your design)
+  const MIN_HADITHS_PER_PAGE = 5;
+  const MAX_HADITHS_PER_PAGE = 50;
+  
   const [savedStates, setSavedStates] = useState({});
 
   // Refs to track scrolling state
@@ -130,6 +158,7 @@ export default function BookReaderPage() {
     if (selectedVolume && !changingVolume) {
       // Reset pagination and hadiths when volume changes
       setCurrentPage(1);
+      setPages([]);
       setAllHadiths([]);
       setChapterHadiths({});
       setCollapsedChapters({});
@@ -139,6 +168,66 @@ export default function BookReaderPage() {
       isProcessingTargetHadithRef.current = false;
     }
   }, [selectedVolume, changingVolume]);
+
+  // Update feedback state when user changes
+  useEffect(() => {
+    setFeedback(prev => ({
+      ...prev,
+      name: user?.user_metadata?.full_name || "",
+      email: user?.email || ""
+    }));
+  }, [user]);
+
+  // Function to create dynamic pages based on content length
+  const createDynamicPages = useCallback((hadiths) => {
+    if (!hadiths || hadiths.length === 0) return [];
+    
+    const pageGroups = [];
+    let currentPageHadiths = [];
+    let currentPageHeight = 0;
+    
+    for (const hadith of hadiths) {
+      const hadithHeight = estimateHadithHeight(hadith);
+      
+      // If adding this hadith would exceed max height and we already have at least MIN_HADITHS_PER_PAGE
+      if (currentPageHeight + hadithHeight > MAX_PAGE_HEIGHT && 
+          currentPageHadiths.length >= MIN_HADITHS_PER_PAGE) {
+        // Start a new page
+        pageGroups.push([...currentPageHadiths]);
+        currentPageHadiths = [hadith];
+        currentPageHeight = hadithHeight;
+      } else if (currentPageHadiths.length >= MAX_HADITHS_PER_PAGE) {
+        // Enforce maximum hadiths per page
+        pageGroups.push([...currentPageHadiths]);
+        currentPageHadiths = [hadith];
+        currentPageHeight = hadithHeight;
+      } else {
+        // Add to current page
+        currentPageHadiths.push(hadith);
+        currentPageHeight += hadithHeight;
+      }
+    }
+    
+    // Add the last page if it has content
+    if (currentPageHadiths.length > 0) {
+      pageGroups.push(currentPageHadiths);
+    }
+    
+    return pageGroups;
+  }, []);
+
+  // Update pages when allHadiths changes
+  useEffect(() => {
+    if (allHadiths.length > 0) {
+      const newPages = createDynamicPages(allHadiths);
+      setPages(newPages);
+      
+      // Reset to page 1 if pages changed significantly
+      if (Math.abs(pages.length - newPages.length) > 2) {
+        setCurrentPage(1);
+      }
+    }
+  }, [allHadiths, createDynamicPages]);
 
   // Scroll when page changes
   useEffect(() => {
@@ -157,13 +246,12 @@ export default function BookReaderPage() {
     }
   }, [currentPage]);
 
-  
   // Handle target hadith when component loads
   useEffect(() => {
-    if (targetHadithId.current && !isProcessingTargetHadithRef.current && book && !changingVolume) {
+    if (targetHadithId.current && !isProcessingTargetHadithRef.current && book && !changingVolume && pages.length > 0) {
       handleTargetHadith();
     }
-  }, [targetHadithId.current, book, volumes, changingVolume]);
+  }, [targetHadithId.current, book, volumes, changingVolume, pages]);
 
   const handleTargetHadith = async () => {
     if (!targetHadithId.current || isProcessingTargetHadithRef.current) return;
@@ -243,11 +331,23 @@ export default function BookReaderPage() {
       return;
     }
 
-    const page = Math.floor(index / hadithsPerPage) + 1;
+    // Find which page contains this hadith
+    let pageIndex = 0;
+    let cumulativeHadiths = 0;
+    
+    for (let i = 0; i < pages.length; i++) {
+      cumulativeHadiths += pages[i].length;
+      if (index < cumulativeHadiths) {
+        pageIndex = i;
+        break;
+      }
+    }
+
+    const targetPage = pageIndex + 1;
 
     // Set page if needed
-    if (page !== currentPage) {
-      setCurrentPage(page);
+    if (targetPage !== currentPage) {
+      setCurrentPage(targetPage);
       // Wait for page to render
       scrollTimeoutRef.current = setTimeout(() => {
         scrollToTargetHadith();
@@ -321,7 +421,7 @@ export default function BookReaderPage() {
         `)
         .in("chapter_id", chapterIds)
         .order("chapter_id", { ascending: true })
-        .order("id", { ascending: true }); // Changed from hadith_number to id
+        .order("id", { ascending: true });
       
       if (error) throw error;
       
@@ -348,7 +448,12 @@ export default function BookReaderPage() {
       
       setChapterHadiths(hadithsMap);
       setAllHadiths(sortedAllHadiths);
+      
+      // Create dynamic pages
+      const dynamicPages = createDynamicPages(sortedAllHadiths);
+      setPages(dynamicPages);
       setCurrentPage(1);
+      
       setHadithsLoadingProgress(100);
       
       if (user) {
@@ -409,16 +514,24 @@ export default function BookReaderPage() {
     return text.substring(0, 750) + '...';
   };
 
-  // Calculate paginated hadiths
+  // Get paginated hadiths for current page
   const getPaginatedHadiths = () => {
-    const startIndex = (currentPage - 1) * hadithsPerPage;
-    const endIndex = startIndex + hadithsPerPage;
-    return allHadiths.slice(startIndex, endIndex);
+    if (pages.length === 0 || currentPage > pages.length) return [];
+    return pages[currentPage - 1] || [];
   };
 
   // Get total number of pages
   const getTotalPages = () => {
-    return Math.ceil(allHadiths.length / hadithsPerPage);
+    return pages.length;
+  };
+
+  // Get cumulative hadith count up to previous pages
+  const getCumulativeHadithCount = (pageNum) => {
+    let count = 0;
+    for (let i = 0; i < pageNum - 1 && i < pages.length; i++) {
+      count += pages[i].length;
+    }
+    return count;
   };
 
   // Find chapter for a hadith
@@ -426,8 +539,8 @@ export default function BookReaderPage() {
     return chapters.find(ch => ch.id === hadith.chapter_id);
   };
 
-  // Group paginated hadiths by chapter for display
-  const getPaginatedHadithsByChapter = () => {
+  // Group hadiths by chapter for display
+  const getHadithsByChapter = useMemo(() => {
     const paginatedHadiths = getPaginatedHadiths();
     const grouped = {};
     
@@ -445,9 +558,9 @@ export default function BookReaderPage() {
     });
     
     return grouped;
-  };
+  }, [currentPage, pages, chapters]);
 
-  // Volume change handler - FIXED VERSION
+  // Volume change handler
   const handleVolumeChange = async (newVolumeId) => {
     // Don't do anything if selecting the same volume
     if (newVolumeId === selectedVolume) return;
@@ -460,99 +573,102 @@ export default function BookReaderPage() {
     
     // Reset all hadith-related states
     setCurrentPage(1);
-    setAllHadiths([]);
-    setChapterHadiths({});
-    setCollapsedChapters({});
-    setExpandedArabic({});
-    setLoadingHadiths(true);
-    
-    // Reset scroll tracking
-    hasScrolledToTargetRef.current = false;
-    isProcessingTargetHadithRef.current = false;
-    
-    try {
-      // Fetch chapters for the new volume
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("*")
-        .eq("volume_id", newVolumeId)
-        .order("chapter_number", { ascending: true });
+      setPages([]);
+      setAllHadiths([]);
+      setChapterHadiths({});
+      setCollapsedChapters({});
+      setExpandedArabic({});
+      setLoadingHadiths(true);
       
-      if (error) {
-        console.error("Error fetching chapters:", error);
+      // Reset scroll tracking
+      hasScrolledToTargetRef.current = false;
+      isProcessingTargetHadithRef.current = false;
+      
+      try {
+        // Fetch chapters for the new volume
+        const { data, error } = await supabase
+          .from("chapters")
+          .select("*")
+          .eq("volume_id", newVolumeId)
+          .order("chapter_number", { ascending: true });
+        
+        if (error) {
+          console.error("Error fetching chapters:", error);
+          setSnackbar({
+            open: true,
+            message: "Failed to load chapters for this volume",
+            severity: "error"
+          });
+          return;
+        }
+        
+        setChapters(data || []);
+        
+        // If there are no chapters, we should still show the UI
+        if (!data || data.length === 0) {
+          setLoadingHadiths(false);
+        }
+        
+      } catch (error) {
+        console.error("Error changing volume:", error);
         setSnackbar({
           open: true,
-          message: "Failed to load chapters for this volume",
+          message: "An error occurred while changing volumes",
           severity: "error"
         });
-        return;
+      } finally {
+        setChangingVolume(false);
       }
-      
-      setChapters(data || []);
-      
-      // If there are no chapters, we should still show the UI
-      if (!data || data.length === 0) {
-        setLoadingHadiths(false);
-      }
-      
-    } catch (error) {
-      console.error("Error changing volume:", error);
-      setSnackbar({
-        open: true,
-        message: "An error occurred while changing volumes",
-        severity: "error"
-      });
-    } finally {
-      setChangingVolume(false);
-    }
-  };
+    };
 
-  // Save/Unsave hadith function
-  const handleSaveHadith = async (hadithId) => {
-    if (!user) {
-      setSnackbar({
-        open: true,
-        message: "Please sign in to save hadith",
-        severity: "warning"
-      });
-      return;
-    }
+  // Save/Unsave hadith function WITH DEBUG LOGGING
+// Save/Unsave hadith function - FIXED VERSION
+const handleSaveHadith = async (hadithId) => {
+  try {
+    const isSaved = await isHadithSaved(hadithId);
     
-    try {
-      if (savedStates[hadithId]) {
-        const { error } = await removeSavedHadith(hadithId);
-        if (error) throw new Error(error);
-        
-        setSavedStates(prev => ({ ...prev, [hadithId]: false }));
-        setSnackbar({
-          open: true,
-          message: "Hadith removed from saved",
-          severity: "info"
-        });
-      } else {
-        const { data, error } = await saveHadith(hadithId);
-        if (error) throw new Error(error);
-        
-        setSavedStates(prev => ({ ...prev, [hadithId]: true }));
-        setSnackbar({
-          open: true,
-          message: "Hadith saved successfully!",
-          severity: "success"
-        });
-      }
-    } catch (error) {
-      console.error('Error toggling save:', error);
+    if (isSaved) {
+      // Hadith is saved, so remove it
+      const { error } = await removeSavedHadith(hadithId);
+      if (error) throw error;
+      
+      // Update local state
+      setSavedStates(prev => ({ ...prev, [hadithId]: false }));
+      
+      // Show success message
       setSnackbar({
         open: true,
-        message: error.message || 'An error occurred',
-        severity: 'error'
+        message: "Hadith removed from saved",
+        severity: "info"
+      });
+    } else {
+      // Hadith is not saved, so save it
+      const { data, error } = await saveHadith(hadithId);
+      if (error) throw error;
+      
+      // Update local state
+      setSavedStates(prev => ({ ...prev, [hadithId]: true }));
+      
+      // Show success message
+      setSnackbar({
+        open: true,
+        message: "Hadith saved successfully!",
+        severity: "success"
       });
     }
-  };
+  } catch (error) {
+    console.error("Error toggling save:", error);
+    setSnackbar({
+      open: true,
+      message: error.message || "Failed to save/unsave hadith",
+      severity: "error"
+    });
+  }
+};
 
   // Copy hadith to clipboard
   const copyHadithFormatted = (hadith, chapter) => {
-    const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapter.id}#hadith-${hadith.id}`;
+    const hadithUrl = `${window.location.origin}/book/${bookId}/reader?hadith=${hadith.id}`;
     const bookName = book?.title || "Unknown Book";
     
     let referenceLine = "";
@@ -584,8 +700,27 @@ export default function BookReaderPage() {
 
   // Feedback functionality
   const handleFeedbackOpen = (hadith) => {
+    if (!user) {
+      setSnackbar({
+        open: true,
+        message: "Please log in to submit feedback",
+        severity: "warning"
+      });
+      return;
+    }
+    
     setFeedbackDialog({ open: true, hadith });
-    setFeedback({ name: "", email: "", comments: "" });
+    
+    // Try to get name from user metadata or email prefix
+    const userName = user.user_metadata?.full_name || 
+                     user.user_metadata?.name || 
+                     user.email?.split('@')[0] || "";
+    
+    setFeedback({ 
+      name: "",
+      email: user.email || "", 
+      comments: "" 
+    });
   };
 
   const handleFeedbackClose = () => {
@@ -616,7 +751,7 @@ export default function BookReaderPage() {
 
       setSnackbar({
         open: true,
-        message: "Feedback sent successfully 🙏",
+        message: "Feedback sent successfully",
         severity: "success",
       });
 
@@ -792,6 +927,8 @@ export default function BookReaderPage() {
             Page {currentPage} of {totalPages}
           </Typography>
         )}
+        
+        {/* Page stats */}
       </Box>
     );
   };
@@ -1030,7 +1167,7 @@ export default function BookReaderPage() {
                   color="text.secondary"
                   sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                 >
-                  {chapters.length} chapters • {allHadiths.length} hadiths total
+                  {chapters.length} chapters • {allHadiths.length} hadiths total • {pages.length} pages
                 </Typography>
               </Stack>
             )}
@@ -1082,16 +1219,16 @@ export default function BookReaderPage() {
             </Box>
           ) : (
             <Stack spacing={4}>
+              {/* Page Info */}
+              
               {/* Pagination Controls at the top */}
               <PaginationControls />
               
               {/* Display paginated hadiths */}
               {(() => {
-                const paginatedGroups = getPaginatedHadithsByChapter();
-                const chapterIds = Object.keys(paginatedGroups);
+                const chapterGroups = Object.values(getHadithsByChapter);
                 
-                return chapterIds.map(chapterId => {
-                  const { chapter, hadiths } = paginatedGroups[chapterId];
+                return chapterGroups.map(({ chapter, hadiths }) => {
                   const isChapterCollapsed = collapsedChapters[chapter.id] || false;
                   
                   return (
@@ -1190,236 +1327,237 @@ export default function BookReaderPage() {
                       {/* Hadiths in this chapter */}
                       {!isChapterCollapsed && hadiths.length > 0 && (
                         <Stack spacing={2}>
-                          {hadiths.map((hadith, idx) => (
-                            <Paper
-                              key={hadith.id}
-                              id={`reader-hadith-${hadith.id}`}
-                              sx={{
-                                p: { xs: 1.5, sm: 2, md: 3 },
-                                borderRadius: 2,
-                                borderLeft: '3px solid',
-                                borderLeftColor: 'primary.main',
-                                position: 'relative',
-                                '&:hover': {
-                                  boxShadow: 2,
-                                }
-                              }}
-                            >
-                              {/* Action Icons */}
-                              <Box
-                                sx={{
-                                  position: "absolute",
-                                  top: 12,
-                                  right: 12,
-                                  display: "flex",
-                                  gap: 1,
-                                  backgroundColor: "background.paper",
-                                  borderRadius: 2,
-                                  p: 0.5,
-                                  border: "1px solid",
-                                  borderColor: "divider",
-                                  zIndex: 2,
-                                }}
-                              >
-                                <Tooltip title="Copy Hadith">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => copyHadithFormatted(hadith, chapter)}
-                                    sx={{
-                                      "&:hover": {
-                                        color: "primary.main",
-                                      },
-                                    }}
-                                  >
-                                    <ContentCopyIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-
-                                <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleSaveHadith(hadith.id)}
-                                    sx={{
-                                      "&:hover": {
-                                        color: savedStates[hadith.id] ? "error.main" : "warning.main",
-                                      },
-                                    }}
-                                  >
-                                    {savedStates[hadith.id] ? (
-                                      <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
-                                    ) : (
-                                      <BookmarkBorderIcon fontSize="small" />
-                                    )}
-                                  </IconButton>
-                                </Tooltip>
-
-                                <Tooltip title="Report Issue">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleFeedbackOpen(hadith)}
-                                    sx={{
-                                      "&:hover": {
-                                        color: "info.main",
-                                      },
-                                    }}
-                                  >
-                                    <FeedbackIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-
-                              {/* Save Status Indicator */}
-                              {savedStates[hadith.id] && (
-                                <Box sx={{ mb: 1, ml: -1 }}>
-                                  <Chip
-                                    label="Saved"
-                                    size="small"
-                                    sx={{
-                                      backgroundColor: "warning.light",
-                                      color: "warning.contrastText",
-                                      fontSize: "0.7rem",
-                                      height: 20,
-                                    }}
-                                  />
-                                </Box>
-                              )}
-
-                              <Box sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: 2, 
-                                mb: 2, 
-                                pr: 6,
-                                flexWrap: 'wrap'
-                              }}>
-                                <Chip
-                                  label={`Hadith ${hadith.hadith_number}`}
-                                  color="primary"
-                                  variant="outlined"
-                                  size="small"
-                                />
-                                <Divider orientation="vertical" flexItem sx={{ height: 20 }} />
-                                <Typography variant="caption" color="text.secondary">
-                                  #{((currentPage - 1) * hadithsPerPage) + idx + 1}
-                                </Typography>
-                              </Box>
-
-                              {/* Arabic Text */}
+                          {hadiths.map((hadith, idx) => {
+                            const cumulativeCount = getCumulativeHadithCount(currentPage);
+                            const globalIndex = cumulativeCount + idx;
+                            
+                            return (
                               <Paper
-                                elevation={0}
+                                key={hadith.id}
+                                id={`reader-hadith-${hadith.id}`}
                                 sx={{
-                                  p: { xs: 1.5, sm: 2 },
-                                  mb: 2,
+                                  p: { xs: 1.5, sm: 2, md: 3 },
                                   borderRadius: 2,
-                                  backgroundColor: '#f8f9fa',
-                                  border: '1px solid',
-                                  borderColor: 'divider',
+                                  borderLeft: '3px solid',
+                                  borderLeftColor: 'primary.main',
                                   position: 'relative',
+                                  '&:hover': {
+                                    boxShadow: 2,
+                                  }
                                 }}
                               >
-                                <Typography
-                                  variant="body1"
+                                {/* Action Icons */}
+                                <Box
                                   sx={{
-                                    fontSize: { xs: '0.95rem', sm: '1.1rem' },
-                                    lineHeight: 1.8,
-                                    direction: 'rtl',
-                                    textAlign: 'right',
-                                    fontFamily: 'inherit',
-                                    fontWeight: 500,
+                                    position: "absolute",
+                                    top: 12,
+                                    right: 12,
+                                    display: "flex",
+                                    gap: 1,
+                                    backgroundColor: "background.paper",
+                                    borderRadius: 2,
+                                    p: 0.5,
+                                    border: "1px solid",
+                                    borderColor: "divider",
+                                    zIndex: 2,
                                   }}
                                 >
-                                  {expandedArabic[hadith.id] ? hadith.arabic : truncateArabic(hadith.arabic)}
-                                </Typography>
-                                
-                                {isArabicLong(hadith.arabic) && (
-                                  <Box sx={{ mt: 2, textAlign: 'center' }}>
-                                    <Button
-                                      variant="text"
+                                  <Tooltip title="Copy Hadith">
+                                    <IconButton
                                       size="small"
-                                      onClick={() => toggleArabicExpand(hadith.id)}
+                                      onClick={() => copyHadithFormatted(hadith, chapter)}
                                       sx={{
-                                        color: 'primary.main',
-                                        fontWeight: 500,
-                                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                                        '&:hover': {
-                                          backgroundColor: 'primary.light',
-                                        }
+                                        "&:hover": {
+                                          color: "primary.main",
+                                        },
                                       }}
                                     >
-                                      {expandedArabic[hadith.id] ? 'Show Less Arabic' : 'Show More Arabic'}
-                                      {expandedArabic[hadith.id] ? (
-                                        <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14 }} />
+                                      <ContentCopyIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+
+                                  <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleSaveHadith(hadith.id)}
+                                      sx={{
+                                        "&:hover": {
+                                          color: savedStates[hadith.id] ? "error.main" : "warning.main",
+                                        },
+                                      }}
+                                    >
+                                      {savedStates[hadith.id] ? (
+                                        <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
                                       ) : (
-                                        <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14, transform: 'rotate(180deg)' }} />
+                                        <BookmarkBorderIcon fontSize="small" />
                                       )}
-                                    </Button>
+                                    </IconButton>
+                                  </Tooltip>
+
+                                  <Tooltip title="Report Issue">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleFeedbackOpen(hadith)}
+                                      sx={{
+                                        "&:hover": {
+                                          color: "info.main",
+                                        },
+                                      }}
+                                    >
+                                      <FeedbackIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+
+                                {/* Save Status Indicator */}
+                                {savedStates[hadith.id] && (
+                                  <Box sx={{ mb: 1, ml: -1 }}>
+                                    <Chip
+                                      label="Saved"
+                                      size="small"
+                                      sx={{
+                                        backgroundColor: "warning.light",
+                                        color: "warning.contrastText",
+                                        fontSize: "0.7rem",
+                                        height: 20,
+                                      }}
+                                    />
+                                  </Box>
+                                )}
+
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: 2, 
+                                  mb: 2, 
+                                  pr: 6,
+                                  flexWrap: 'wrap'
+                                }}>
+                                  <Chip
+                                    label={`Hadith ${hadith.hadith_number}`}
+                                    color="primary"
+                                    variant="outlined"
+                                    size="small"
+                                  />
+                                </Box>
+
+                                {/* Arabic Text */}
+                                <Paper
+                                  elevation={0}
+                                  sx={{
+                                    p: { xs: 1.5, sm: 2 },
+                                    mb: 2,
+                                    borderRadius: 2,
+                                    backgroundColor: '#f8f9fa',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    position: 'relative',
+                                  }}
+                                >
+                                  <Typography
+                                    variant="body1"
+                                    sx={{
+                                      fontSize: { xs: '0.95rem', sm: '1.1rem' },
+                                      lineHeight: 1.8,
+                                      direction: 'rtl',
+                                      textAlign: 'right',
+                                      fontFamily: 'inherit',
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    {expandedArabic[hadith.id] ? hadith.arabic : truncateArabic(hadith.arabic)}
+                                  </Typography>
+                                  
+                                  {isArabicLong(hadith.arabic) && (
+                                    <Box sx={{ mt: 2, textAlign: 'center' }}>
+                                      <Button
+                                        variant="text"
+                                        size="small"
+                                        onClick={() => toggleArabicExpand(hadith.id)}
+                                        sx={{
+                                          color: 'primary.main',
+                                          fontWeight: 500,
+                                          fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                                          '&:hover': {
+                                            backgroundColor: 'primary.light',
+                                          }
+                                        }}
+                                      >
+                                        {expandedArabic[hadith.id] ? 'Show Less Arabic' : 'Show More Arabic'}
+                                        {expandedArabic[hadith.id] ? (
+                                          <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14 }} />
+                                        ) : (
+                                          <KeyboardDoubleArrowUpIcon sx={{ ml: 0.5, fontSize: 14, transform: 'rotate(180deg)' }} />
+                                        )}
+                                      </Button>
+                                    </Box>
+                                  )}
+                                </Paper>
+
+                                {/* English Translation */}
+                                <Paper
+                                  elevation={0}
+                                  sx={{
+                                    p: { xs: 1.5, sm: 2 },
+                                    mb: 2,
+                                    borderRadius: 2,
+                                    backgroundColor: 'white',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                  }}
+                                >
+                                  <Typography
+                                    variant="body1"
+                                    color="text.primary"
+                                    sx={{
+                                      lineHeight: 1.7,
+                                      whiteSpace: 'pre-line',
+                                      fontSize: { xs: '0.9rem', sm: '1rem' },
+                                    }}
+                                  >
+                                    {hadith.english}
+                                  </Typography>
+                                </Paper>
+
+                                {/* Reference */}
+                                {hadith.hadith_reference?.reference && (
+                                  <Typography 
+                                    variant="body2" 
+                                    color="text.secondary"
+                                    sx={{ 
+                                      fontStyle: 'italic', 
+                                      mt: 1,
+                                      fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                                    }}
+                                  >
+                                    Reference: {hadith.hadith_reference.reference}
+                                  </Typography>
+                                )}
+
+                                {/* Login Prompt */}
+                                {!user && (
+                                  <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+                                    <Typography variant="body2" color="text.secondary" align="center">
+                                      Want to save this hadith?{' '}
+                                      <Button
+                                        size="small"
+                                        variant="text"
+                                        component={Link}
+                                        to="/login"
+                                        sx={{ 
+                                          textTransform: 'none', 
+                                          fontWeight: 'bold',
+                                          fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                                        }}
+                                      >
+                                        Login or Sign Up
+                                      </Button>
+                                    </Typography>
                                   </Box>
                                 )}
                               </Paper>
-
-                              {/* English Translation */}
-                              <Paper
-                                elevation={0}
-                                sx={{
-                                  p: { xs: 1.5, sm: 2 },
-                                  mb: 2,
-                                  borderRadius: 2,
-                                  backgroundColor: 'white',
-                                  border: '1px solid',
-                                  borderColor: 'divider',
-                                }}
-                              >
-                                <Typography
-                                  variant="body1"
-                                  color="text.primary"
-                                  sx={{
-                                    lineHeight: 1.7,
-                                    whiteSpace: 'pre-line',
-                                    fontSize: { xs: '0.9rem', sm: '1rem' },
-                                  }}
-                                >
-                                  {hadith.english}
-                                </Typography>
-                              </Paper>
-
-                              {/* Reference */}
-                              {hadith.hadith_reference?.reference && (
-                                <Typography 
-                                  variant="body2" 
-                                  color="text.secondary"
-                                  sx={{ 
-                                    fontStyle: 'italic', 
-                                    mt: 1,
-                                    fontSize: { xs: '0.8rem', sm: '0.875rem' }
-                                  }}
-                                >
-                                  Reference: {hadith.hadith_reference.reference}
-                                </Typography>
-                              )}
-
-                              {/* Login Prompt */}
-                              {!user && (
-                                <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
-                                  <Typography variant="body2" color="text.secondary" align="center">
-                                    Want to save this hadith?{' '}
-                                    <Button
-                                      size="small"
-                                      variant="text"
-                                      component={Link}
-                                      to="/login"
-                                      sx={{ 
-                                        textTransform: 'none', 
-                                        fontWeight: 'bold',
-                                        fontSize: { xs: '0.75rem', sm: '0.875rem' }
-                                      }}
-                                    >
-                                      Login or Sign Up
-                                    </Button>
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Paper>
-                          ))}
+                            );
+                          })}
                         </Stack>
                       )}
 
@@ -1433,7 +1571,7 @@ export default function BookReaderPage() {
                           }}
                         >
                           <Typography variant="body1" color="text.secondary">
-                            No hadiths found in this chapter.
+                            No hadiths found in this chapter for this page.
                           </Typography>
                         </Paper>
                       )}
@@ -1459,7 +1597,7 @@ export default function BookReaderPage() {
                 >
                   {loadingHadiths 
                     ? 'Loading hadiths from all chapters...' 
-                    : `Showing ${getPaginatedHadiths().length} hadiths on page ${currentPage} of ${getTotalPages()} • Total ${allHadiths.length} hadiths`
+                    : `Showing ${getPaginatedHadiths().length} hadiths on page ${currentPage} of ${getTotalPages()} • Total ${allHadiths.length} hadiths • Dynamic pagination based on content length`
                   }
                 </Typography>
               </Box>
@@ -1518,16 +1656,33 @@ export default function BookReaderPage() {
               placeholder="Enter your name"
             />
             
-            <TextField
-              label="Email"
-              type="email"
-              fullWidth
-              required
-              value={feedback.email}
-              onChange={(e) => setFeedback({ ...feedback, email: e.target.value })}
-              variant="outlined"
-              placeholder="Enter your email for follow-up"
-            />
+            {/* Email field - pre-filled if logged in */}
+            <Box>
+              <TextField
+                label="Email"
+                type="email"
+                fullWidth
+                required
+                value={feedback.email}
+                onChange={(e) => setFeedback({ ...feedback, email: e.target.value })}
+                variant="outlined"
+                InputProps={{
+                  readOnly: !!user,
+                }}
+                helperText={user ? "Email is pre-filled from your account" : "Enter your email for follow-up"}
+                sx={{
+                  '& .MuiInputBase-input.Mui-disabled': {
+                    backgroundColor: 'grey.100',
+                    color: 'text.primary',
+                  }
+                }}
+              />
+              {user && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Logged in as: {user.email}
+                </Typography>
+              )}
+            </Box>
             
             <TextField
               label="Comments *"
@@ -1562,7 +1717,7 @@ export default function BookReaderPage() {
           <Button
             variant="contained"
             onClick={handleFeedbackSubmit}
-            disabled={!feedback.comments.trim()}
+            disabled={!feedback.comments.trim() || !feedback.email.trim() || !feedback.name.trim()}
           >
             Submit Report
           </Button>
