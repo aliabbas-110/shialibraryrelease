@@ -25,20 +25,18 @@ import {
 } from "@mui/material";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
-import HomeIcon from "@mui/icons-material/Home";
-import BookIcon from "@mui/icons-material/Book";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import FormatQuoteIcon from "@mui/icons-material/FormatQuote";
 import KeyboardDoubleArrowUpIcon from "@mui/icons-material/KeyboardDoubleArrowUp";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FeedbackIcon from "@mui/icons-material/Feedback";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import CloseIcon from "@mui/icons-material/Close";
-import { ThemeProvider } from "@mui/material";
-import theme from "../assets/theme.js";
+import FormatQuoteIcon from "@mui/icons-material/FormatQuote";
+import LockIcon from "@mui/icons-material/Lock";
+import SecurityIcon from "@mui/icons-material/Security";
 import { supabase } from "../config/supabaseClient.js";
 import { useAuth } from '../contexts/AuthContext';
+import { isContentRestricted, getRestrictionBadgeText } from "../config/restrictedContent.js";
 
 export default function ChapterPage() {
   const { bookId, chapterId } = useParams();
@@ -59,6 +57,14 @@ export default function ChapterPage() {
   // Auth context for saving hadiths
   const { user, saveHadith, removeSavedHadith, isHadithSaved } = useAuth();
   const [savedStates, setSavedStates] = useState({});
+  
+  // Content restrictions state
+  const [restrictions, setRestrictions] = useState({
+    allowCopy: true,
+    allowSave: true,
+    allowFeedback: true,
+    isRestricted: false
+  });
 
   // Check scroll position for back to top button
   useEffect(() => {
@@ -68,6 +74,52 @@ export default function ChapterPage() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // Check content restrictions when component mounts
+  useEffect(() => {
+    if (bookId && chapterId) {
+      const restrictionCheck = isContentRestricted(bookId, chapterId);
+      setRestrictions(restrictionCheck);
+      
+      // Disable right-click context menu for restricted content
+      if (!restrictionCheck.allowCopy) {
+        const disableContextMenu = (e) => {
+          e.preventDefault();
+          setSnackbar({
+            open: true,
+            message: "Right-click is disabled for this content",
+            severity: "warning"
+          });
+        };
+        
+        // Disable keyboard shortcuts for copy/paste
+        const disableShortcuts = (e) => {
+          if ((e.ctrlKey || e.metaKey) && 
+              (e.key === 'c' || e.key === 'C' || 
+               e.key === 'v' || e.key === 'V' || 
+               e.key === 'a' || e.key === 'A' ||
+               e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            if (!restrictionCheck.allowCopy) {
+              setSnackbar({
+                open: true,
+                message: "Copy/paste shortcuts are disabled",
+                severity: "warning"
+              });
+            }
+          }
+        };
+        
+        document.addEventListener('contextmenu', disableContextMenu);
+        document.addEventListener('keydown', disableShortcuts);
+        
+        return () => {
+          document.removeEventListener('contextmenu', disableContextMenu);
+          document.removeEventListener('keydown', disableShortcuts);
+        };
+      }
+    }
+  }, [bookId, chapterId]);
 
   
   // Fetch book details
@@ -285,8 +337,17 @@ export default function ChapterPage() {
     }
   }, [bookId, chapterId]);
 
-  // Save/Unsave hadith function
+  // Save/Unsave hadith function WITH RESTRICTIONS
   const handleSaveHadith = async (hadithId) => {
+    if (!restrictions.allowSave) {
+      setSnackbar({
+        open: true,
+        message: "Saving hadiths is disabled for this content",
+        severity: "warning"
+      });
+      return;
+    }
+    
     if (!user) {
       setSnackbar({
         open: true,
@@ -356,8 +417,17 @@ export default function ChapterPage() {
     return book?.english_title;
   };
   
-  // Copy hadith to clipboard
+  // Copy hadith to clipboard WITH RESTRICTIONS
   const copyHadithFormatted = (hadith) => {
+    if (!restrictions.allowCopy) {
+      setSnackbar({
+        open: true,
+        message: "Copying is disabled for this content",
+        severity: "warning"
+      });
+      return;
+    }
+    
     // Get the correct URL with hadith anchor
     const hadithUrl = `${window.location.origin}/book/${bookId}/chapter/${chapterId}#hadith-${hadith.id}`;
     
@@ -416,8 +486,17 @@ export default function ChapterPage() {
     return text.substring(0, 750) + '...';
   };
 
-  // Feedback functionality
+  // Feedback functionality WITH RESTRICTIONS
   const handleFeedbackOpen = (hadith) => {
+    if (!restrictions.allowFeedback) {
+      setSnackbar({
+        open: true,
+        message: "Feedback is disabled for this content",
+        severity: "warning"
+      });
+      return;
+    }
+    
     setFeedbackDialog({ open: true, hadith });
     setFeedback({ name: "", email: "", comments: "" });
   };
@@ -476,8 +555,10 @@ export default function ChapterPage() {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const restrictionBadgeText = getRestrictionBadgeText(restrictions);
+
   return (
-    <ThemeProvider theme={theme}>
+    <>
       <Navbar />
       
       <Container sx={{ mt: "100px", mb: 8, maxWidth: "lg" }}>
@@ -494,11 +575,11 @@ export default function ChapterPage() {
   fontWeight="medium" 
   variant="body1"
   sx={{
-    maxWidth: { xs: '200px', sm: '300px', md: '400px' }, // Responsive max width
+    maxWidth: { xs: '200px', sm: '300px', md: '400px' },
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    fontSize: { xs: '0.875rem', sm: '1rem' }, // Smaller on mobile
+    fontSize: { xs: '0.875rem', sm: '1rem' },
   }}
 >
             {/* Format: "Chapter Name (Chapter X)" */}
@@ -531,84 +612,122 @@ export default function ChapterPage() {
         </Breadcrumbs>
 
         {/* Chapter Header with Integrated Navigation */}
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          mb: 4,
-          gap: 2
-        }}>
-          {/* Left Navigation Button */}
-          <Tooltip title={prevChapter ? `Previous Chapter (${prevChapter.chapter_number})` : "First Chapter"}>
-            <span>
-              <IconButton
-                onClick={() => prevChapter && navigate(`/book/${bookId}/chapter/${prevChapter.id}`)}
-                disabled={!prevChapter}
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 4,
+            borderRadius: 3,
+            backgroundColor: "white",
+            border: "1px solid",
+            borderColor: "divider",
+            position: "relative",
+          }}
+        >
+          {/* Restriction Badge */}
+          {restrictionBadgeText && (
+            <Box sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}>
+              <SecurityIcon color="warning" fontSize="small" />
+              <Chip
+                label={restrictionBadgeText}
+                size="small"
+                color="warning"
+                variant="outlined"
+                icon={<LockIcon fontSize="small" />}
                 sx={{
-                  width: 56,
-                  height: 56,
-                  backgroundColor: "primary.light",
-                  "&:hover": {
-                    backgroundColor: "primary.main",
-                    color: "white",
-                  },
-                  "&.Mui-disabled": {
-                    backgroundColor: "grey.100",
-                    color: "grey.400",
-                  }
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
                 }}
-              >
-                <ArrowBackIosNewIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          {/* Centered Chapter Info */}
+              />
+            </Box>
+          )}
+          
           <Box sx={{ 
-            flex: 1, 
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center'
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            gap: 2
           }}>
-            <Typography variant="h4" fontWeight="bold" color="primary.dark" gutterBottom>
-              {getChapterTitle(currentChapter)}
-            </Typography>
+            {/* Left Navigation Button */}
+            <Tooltip title={prevChapter ? `Previous Chapter (${prevChapter.chapter_number})` : "First Chapter"}>
+              <span>
+                <IconButton
+                  onClick={() => prevChapter && navigate(`/book/${bookId}/chapter/${prevChapter.id}`)}
+                  disabled={!prevChapter}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    backgroundColor: "primary.light",
+                    "&:hover": {
+                      backgroundColor: "primary.main",
+                      color: "white",
+                    },
+                    "&.Mui-disabled": {
+                      backgroundColor: "grey.100",
+                      color: "grey.400",
+                    }
+                  }}
+                >
+                  <ArrowBackIosNewIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
 
-            
-            {/* Hadith Count */}
-            {hadiths.length > 0 && !loading && (
-              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-                {hadiths.length} {hadiths.length !== 1 ? "Ahadith" : "Hadith"}
+            {/* Centered Chapter Info */}
+            <Box sx={{ 
+              flex: 1, 
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}>
+              <Typography variant="h4" fontWeight="bold" color="primary.dark" gutterBottom>
+                {getChapterTitle(currentChapter)}
               </Typography>
-            )}
-          </Box>
 
-          {/* Right Navigation Button */}
-          <Tooltip title={nextChapter ? `Next Chapter (${nextChapter.chapter_number})` : "Last Chapter"}>
-            <span>
-              <IconButton
-                onClick={() => nextChapter && navigate(`/book/${bookId}/chapter/${nextChapter.id}`)}
-                disabled={!nextChapter}
-                sx={{
-                  width: 56,
-                  height: 56,
-                  backgroundColor: "primary.light",
-                  "&:hover": {
-                    backgroundColor: "primary.main",
-                    color: "white",
-                  },
-                  "&.Mui-disabled": {
-                    backgroundColor: "grey.100",
-                    color: "grey.400",
-                  }
-                }}
-              >
-                <ArrowForwardIosIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Box>
+              
+              {/* Hadith Count */}
+              {hadiths.length > 0 && !loading && (
+                <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                  {hadiths.length} {hadiths.length !== 1 ? "Ahadith" : "Hadith"}
+                </Typography>
+              )}
+            </Box>
+
+            {/* Right Navigation Button */}
+            <Tooltip title={nextChapter ? `Next Chapter (${nextChapter.chapter_number})` : "Last Chapter"}>
+              <span>
+                <IconButton
+                  onClick={() => nextChapter && navigate(`/book/${bookId}/chapter/${nextChapter.id}`)}
+                  disabled={!nextChapter}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    backgroundColor: "primary.light",
+                    "&:hover": {
+                      backgroundColor: "primary.main",
+                      color: "white",
+                    },
+                    "&.Mui-disabled": {
+                      backgroundColor: "grey.100",
+                      color: "grey.400",
+                    }
+                  }}
+                >
+                  <ArrowForwardIosIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+          
+        </Paper>
         
         {/* Hadiths List */}
         {loading ? (
@@ -638,6 +757,13 @@ export default function ChapterPage() {
                   transition: "all 0.2s ease",
                 },
                 transition: "all 0.2s ease",
+                ...(!restrictions.allowCopy && {
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  MozUserSelect: 'none',
+                  msUserSelect: 'none',
+                  cursor: 'default'
+                })
               }}
             >
               {/* Action Icons in Top Right */}
@@ -656,55 +782,75 @@ export default function ChapterPage() {
                   zIndex: 2,
                 }}
               >
-                {/* Copy Button */}
-                <Tooltip title="Copy Hadith">
-                  <IconButton
-                    size="small"
-                    onClick={() => copyHadithFormatted(h)}
-                    
-                    sx={{
-                      "&:hover": {
-                        color: "primary.main",
-                      },
-                    }}
-                  >
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                {/* Copy Button - Conditionally shown */}
+                {restrictions.allowCopy && (
+                  <Tooltip title="Copy Hadith">
+                    <IconButton
+                      size="small"
+                      onClick={() => copyHadithFormatted(h)}
+                      sx={{
+                        "&:hover": {
+                          color: "primary.main",
+                        },
+                      }}
+                    >
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
 
-                {/* Save Button - Using Auth Context */}
-                <Tooltip title={savedStates[h.id] ? "Remove from saved" : "Save hadith"}>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleSaveHadith(h.id)}
-                    sx={{
-                      "&:hover": {
-                        color: savedStates[h.id] ? "error.main" : "warning.main",
-                      },
-                    }}
-                  >
-                    {savedStates[h.id] ? (
-                      <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
-                    ) : (
-                      <BookmarkBorderIcon fontSize="small" />
-                    )}
-                  </IconButton>
-                </Tooltip>
+                {/* Save Button - Conditionally shown */}
+                {restrictions.allowSave && (
+                  <Tooltip title={savedStates[h.id] ? "Remove from saved" : "Save hadith"}>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleSaveHadith(h.id)}
+                      sx={{
+                        "&:hover": {
+                          color: savedStates[h.id] ? "error.main" : "warning.main",
+                        },
+                      }}
+                    >
+                      {savedStates[h.id] ? (
+                        <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
+                      ) : (
+                        <BookmarkBorderIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                )}
 
-                {/* Feedback Button */}
-                <Tooltip title="Report Issue">
-                  <IconButton
-                    size="small"
-                    onClick={() => handleFeedbackOpen(h)}
-                    sx={{
-                      "&:hover": {
-                        color: "info.main",
-                      },
-                    }}
-                  >
-                    <FeedbackIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                {/* Feedback Button - Conditionally shown */}
+                {restrictions.allowFeedback && (
+                  <Tooltip title="Report Issue">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFeedbackOpen(h)}
+                      sx={{
+                        "&:hover": {
+                          color: "info.main",
+                        },
+                      }}
+                    >
+                      <FeedbackIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                
+                {/* Lock icon if all actions are disabled */}
+                {!restrictions.allowCopy && !restrictions.allowSave && !restrictions.allowFeedback && (
+                  <Tooltip title="All actions disabled for protected content">
+                    <IconButton
+                      size="small"
+                      disabled
+                      sx={{
+                        color: "text.disabled",
+                      }}
+                    >
+                      <LockIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
               </Box>
 
               {/* Save Status Indicator */}
@@ -748,6 +894,12 @@ export default function ChapterPage() {
                   border: "1px solid",
                   borderColor: "divider",
                   position: "relative",
+                  ...(!restrictions.allowCopy && {
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                  })
                 }}
               >
                 <Typography
@@ -800,6 +952,12 @@ export default function ChapterPage() {
                   backgroundColor: "white",
                   border: "1px solid",
                   borderColor: "divider",
+                  ...(!restrictions.allowCopy && {
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                  })
                 }}
               >
                 <Typography
@@ -809,8 +967,8 @@ export default function ChapterPage() {
                     lineHeight: 1.7,
                     whiteSpace: "pre-line",
                     fontSize: { xs: "1rem", md: "1.05rem" },
-                    textAlign: "left", // Ensure left alignment
-                    direction: "ltr", // Ensure left-to-right direction
+                    textAlign: "left",
+                    direction: "ltr",
                   }}
                 >
                   {h.english}
@@ -833,8 +991,18 @@ export default function ChapterPage() {
                 </Box>
               )}
 
-              {/* Login Prompt for non-logged in users */}
-              {!user && (
+              {/* Restriction Notice for non-logged in users */}
+              {!user && !restrictions.allowSave && (
+                <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+                  <Typography variant="body2" color="text.secondary" align="center">
+                    <LockIcon fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                    Saving hadiths is disabled for this protected content
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Login Prompt for non-logged in users when save is allowed */}
+              {!user && restrictions.allowSave && (
                 <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
                   <Typography variant="body2" color="text.secondary" align="center">
                     Want to save this hadith?{' '}
@@ -884,6 +1052,31 @@ export default function ChapterPage() {
           >
             <KeyboardDoubleArrowUpIcon />
           </Fab>
+        )}
+        
+        {/* Footer with restriction info */}
+        {restrictions.isRestricted && hadiths.length > 0 && (
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              mt: 4,
+              backgroundColor: 'grey.50',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              <SecurityIcon fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+              <strong>Protected Content:</strong> {!restrictions.allowCopy && !restrictions.allowSave 
+                ? 'Copying and saving disabled for this chapter' 
+                : !restrictions.allowCopy 
+                ? 'Copying disabled, saving allowed' 
+                : 'Some features restricted based on content protection policies.'}
+            </Typography>
+          </Paper>
         )}
       </Container>
 
@@ -988,6 +1181,6 @@ export default function ChapterPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </ThemeProvider>
+    </>
   );
 }

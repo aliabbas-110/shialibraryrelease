@@ -1,4 +1,3 @@
-// Pages/BookReaderPage.jsx - CLEAN VERSION
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -37,11 +36,14 @@ import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import LockIcon from "@mui/icons-material/Lock";
+import SecurityIcon from "@mui/icons-material/Security";
 import Navbar from "../components/Navbar/Navbar.jsx";
 import { supabase } from "../config/supabaseClient.js";
 import { useAuth } from '../contexts/AuthContext';
 import { useBookData } from "../hooks/useBookData.js";
 import { useTheme, useMediaQuery } from "@mui/material";
+import { isContentRestricted, getRestrictionBadgeText } from "../config/restrictedContent.js";
 
 // Helper function to estimate content height
 const estimateHadithHeight = (hadith) => {
@@ -107,6 +109,14 @@ export default function BookReaderPage() {
   const MAX_HADITHS_PER_PAGE = 50;
   
   const [savedStates, setSavedStates] = useState({});
+  
+  // Content restrictions state
+  const [restrictions, setRestrictions] = useState({
+    allowCopy: true,
+    allowSave: true,
+    allowFeedback: true,
+    isRestricted: false
+  });
 
   // Refs to track scrolling state
   const hasScrolledToTargetRef = useRef(false);
@@ -144,6 +154,52 @@ export default function BookReaderPage() {
         clearTimeout(scrollTimeoutRef.current);
       }
     };
+  }, [bookId]);
+
+  // Check content restrictions when book loads
+  useEffect(() => {
+    if (bookId) {
+      const restrictionCheck = isContentRestricted(bookId);
+      setRestrictions(restrictionCheck);
+      
+      // Disable right-click context menu for restricted content
+      if (!restrictionCheck.allowCopy) {
+        const disableContextMenu = (e) => {
+          e.preventDefault();
+          setSnackbar({
+            open: true,
+            message: "Right-click is disabled for this book",
+            severity: "warning"
+          });
+        };
+        
+        // Disable keyboard shortcuts for copy/paste
+        const disableShortcuts = (e) => {
+          if ((e.ctrlKey || e.metaKey) && 
+              (e.key === 'c' || e.key === 'C' || 
+               e.key === 'v' || e.key === 'V' || 
+               e.key === 'a' || e.key === 'A' ||
+               e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            if (!restrictionCheck.allowCopy) {
+              setSnackbar({
+                open: true,
+                message: "Copy/paste shortcuts are disabled",
+                severity: "warning"
+              });
+            }
+          }
+        };
+        
+        document.addEventListener('contextmenu', disableContextMenu);
+        document.addEventListener('keydown', disableShortcuts);
+        
+        return () => {
+          document.removeEventListener('contextmenu', disableContextMenu);
+          document.removeEventListener('keydown', disableShortcuts);
+        };
+      }
+    }
   }, [bookId]);
 
   // Fetch hadiths when chapters are loaded
@@ -621,53 +677,79 @@ export default function BookReaderPage() {
       }
     };
 
-  // Save/Unsave hadith function WITH DEBUG LOGGING
-// Save/Unsave hadith function - FIXED VERSION
-const handleSaveHadith = async (hadithId) => {
-  try {
-    const isSaved = await isHadithSaved(hadithId);
-    
-    if (isSaved) {
-      // Hadith is saved, so remove it
-      const { error } = await removeSavedHadith(hadithId);
-      if (error) throw error;
-      
-      // Update local state
-      setSavedStates(prev => ({ ...prev, [hadithId]: false }));
-      
-      // Show success message
+  // Save/Unsave hadith function WITH RESTRICTIONS
+  const handleSaveHadith = async (hadithId) => {
+    if (!restrictions.allowSave) {
       setSnackbar({
         open: true,
-        message: "Hadith removed from saved",
-        severity: "info"
+        message: "Saving hadiths is disabled for this book",
+        severity: "warning"
       });
-    } else {
-      // Hadith is not saved, so save it
-      const { data, error } = await saveHadith(hadithId);
-      if (error) throw error;
-      
-      // Update local state
-      setSavedStates(prev => ({ ...prev, [hadithId]: true }));
-      
-      // Show success message
+      return;
+    }
+    
+    if (!user) {
       setSnackbar({
         open: true,
-        message: "Hadith saved successfully!",
-        severity: "success"
+        message: "Please sign in to save hadith",
+        severity: "warning"
+      });
+      return;
+    }
+    
+    try {
+      const isSaved = await isHadithSaved(hadithId);
+      
+      if (isSaved) {
+        // Hadith is saved, so remove it
+        const { error } = await removeSavedHadith(hadithId);
+        if (error) throw error;
+        
+        // Update local state
+        setSavedStates(prev => ({ ...prev, [hadithId]: false }));
+        
+        // Show success message
+        setSnackbar({
+          open: true,
+          message: "Hadith removed from saved",
+          severity: "info"
+        });
+      } else {
+        // Hadith is not saved, so save it
+        const { data, error } = await saveHadith(hadithId);
+        if (error) throw error;
+        
+        // Update local state
+        setSavedStates(prev => ({ ...prev, [hadithId]: true }));
+        
+        // Show success message
+        setSnackbar({
+          open: true,
+          message: "Hadith saved successfully!",
+          severity: "success"
+        });
+      }
+    } catch (error) {
+      console.error("Error toggling save:", error);
+      setSnackbar({
+        open: true,
+        message: error.message || "Failed to save/unsave hadith",
+        severity: "error"
       });
     }
-  } catch (error) {
-    console.error("Error toggling save:", error);
-    setSnackbar({
-      open: true,
-      message: error.message || "Failed to save/unsave hadith",
-      severity: "error"
-    });
-  }
-};
+  };
 
-  // Copy hadith to clipboard
+  // Copy hadith to clipboard WITH RESTRICTIONS
   const copyHadithFormatted = (hadith, chapter) => {
+    if (!restrictions.allowCopy) {
+      setSnackbar({
+        open: true,
+        message: "Copying is disabled for this book",
+        severity: "warning"
+      });
+      return;
+    }
+    
     const hadithUrl = `${window.location.origin}/book/${bookId}/reader?hadith=${hadith.id}`;
     const bookName = book?.title || "Unknown Book";
     
@@ -698,8 +780,17 @@ const handleSaveHadith = async (hadithId) => {
       });
   };
 
-  // Feedback functionality
+  // Feedback functionality WITH RESTRICTIONS
   const handleFeedbackOpen = (hadith) => {
+    if (!restrictions.allowFeedback) {
+      setSnackbar({
+        open: true,
+        message: "Feedback is disabled for this book",
+        severity: "warning"
+      });
+      return;
+    }
+    
     if (!user) {
       setSnackbar({
         open: true,
@@ -969,6 +1060,8 @@ const handleSaveHadith = async (hadithId) => {
 
   if (!book) return <Typography>Book not found</Typography>;
 
+  const restrictionBadgeText = getRestrictionBadgeText(restrictions);
+
   return (
     <>
       <Navbar />
@@ -1003,8 +1096,34 @@ const handleSaveHadith = async (hadithId) => {
             backgroundColor: "white",
             border: "1px solid",
             borderColor: "divider",
+            position: "relative",
           }}
         >
+          {/* Restriction Badge */}
+          {restrictionBadgeText && (
+            <Box sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}>
+              <SecurityIcon color="warning" fontSize="small" />
+              <Chip
+                label={restrictionBadgeText}
+                size="small"
+                color="warning"
+                variant="outlined"
+                icon={<LockIcon fontSize="small" />}
+                sx={{
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                }}
+              />
+            </Box>
+          )}
+          
           <Stack 
             direction={{ xs: "column", md: "row" }} 
             spacing={{ xs: 3, md: 5 }}
@@ -1027,15 +1146,17 @@ const handleSaveHadith = async (hadithId) => {
             )}
             
             <Box sx={{ flex: 1, width: "100%" }}>
-              <Typography 
-                variant="h3" 
-                fontWeight="bold" 
-                color="primary.main"
-                gutterBottom
-                sx={{ fontSize: { xs: '2rem', md: '2.5rem' } }}
-              >
-                {book.title} - Reader Mode
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                <Typography 
+                  variant="h3" 
+                  fontWeight="bold" 
+                  color="primary.main"
+                  gutterBottom
+                  sx={{ fontSize: { xs: '2rem', md: '2.5rem' } }}
+                >
+                  {book.title} - Reader Mode
+                </Typography>
+              </Box>
               
               {book.english_title && (
                 <Typography 
@@ -1050,6 +1171,9 @@ const handleSaveHadith = async (hadithId) => {
                   {book.english_title}
                 </Typography>
               )}
+
+              {/* Content Restriction Notice */}
+
 
               {/* Volume Selection */}
               {volumes.length > 0 && (
@@ -1137,14 +1261,30 @@ const handleSaveHadith = async (hadithId) => {
             borderBottom: '2px solid',
             borderColor: 'primary.light',
           }}>
-            <Typography 
-              variant="h4" 
-              fontWeight="bold" 
-              color="primary.main"
-              sx={{ fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.125rem' } }}
-            >
-              Reader Mode
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+              <Typography 
+                variant="h4" 
+                fontWeight="bold" 
+                color="primary.main"
+                sx={{ fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.125rem' } }}
+              >
+                Reader Mode
+              </Typography>
+              
+              {restrictionBadgeText && (
+                <Chip
+                  label={restrictionBadgeText}
+                  color="warning"
+                  variant="outlined"
+                  size="small"
+                  icon={<LockIcon fontSize="small" />}
+                  sx={{
+                    fontWeight: 'medium',
+                  }}
+                />
+              )}
+            </Box>
+            
             {selectedVolumeNumber > 0 && (
               <Stack 
                 direction={{ xs: 'column', sm: 'row' }}
@@ -1343,7 +1483,14 @@ const handleSaveHadith = async (hadithId) => {
                                   position: 'relative',
                                   '&:hover': {
                                     boxShadow: 2,
-                                  }
+                                  },
+                                  ...(!restrictions.allowCopy && {
+                                    userSelect: 'none',
+                                    WebkitUserSelect: 'none',
+                                    MozUserSelect: 'none',
+                                    msUserSelect: 'none',
+                                    cursor: 'default'
+                                  })
                                 }}
                               >
                                 {/* Action Icons */}
@@ -1362,51 +1509,75 @@ const handleSaveHadith = async (hadithId) => {
                                     zIndex: 2,
                                   }}
                                 >
-                                  <Tooltip title="Copy Hadith">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => copyHadithFormatted(hadith, chapter)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: "primary.main",
-                                        },
-                                      }}
-                                    >
-                                      <ContentCopyIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
+                                  {/* Copy Button - Conditionally shown */}
+                                  {restrictions.allowCopy && (
+                                    <Tooltip title="Copy Hadith">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => copyHadithFormatted(hadith, chapter)}
+                                        sx={{
+                                          "&:hover": {
+                                            color: "primary.main",
+                                          },
+                                        }}
+                                      >
+                                        <ContentCopyIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
 
-                                  <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleSaveHadith(hadith.id)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: savedStates[hadith.id] ? "error.main" : "warning.main",
-                                        },
-                                      }}
-                                    >
-                                      {savedStates[hadith.id] ? (
-                                        <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
-                                      ) : (
-                                        <BookmarkBorderIcon fontSize="small" />
-                                      )}
-                                    </IconButton>
-                                  </Tooltip>
+                                  {/* Save Button - Conditionally shown */}
+                                  {restrictions.allowSave && (
+                                    <Tooltip title={savedStates[hadith.id] ? "Remove from saved" : "Save hadith"}>
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleSaveHadith(hadith.id)}
+                                        sx={{
+                                          "&:hover": {
+                                            color: savedStates[hadith.id] ? "error.main" : "warning.main",
+                                          },
+                                        }}
+                                      >
+                                        {savedStates[hadith.id] ? (
+                                          <BookmarkIcon fontSize="small" sx={{ color: "warning.main" }} />
+                                        ) : (
+                                          <BookmarkBorderIcon fontSize="small" />
+                                        )}
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
 
-                                  <Tooltip title="Report Issue">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFeedbackOpen(hadith)}
-                                      sx={{
-                                        "&:hover": {
-                                          color: "info.main",
-                                        },
-                                      }}
-                                    >
-                                      <FeedbackIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
+                                  {/* Feedback Button - Conditionally shown */}
+                                  {restrictions.allowFeedback && (
+                                    <Tooltip title="Report Issue">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleFeedbackOpen(hadith)}
+                                        sx={{
+                                          "&:hover": {
+                                            color: "info.main",
+                                          },
+                                        }}
+                                      >
+                                        <FeedbackIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                  
+                                  {/* Lock icon if all actions are disabled */}
+                                  {!restrictions.allowCopy && !restrictions.allowSave && !restrictions.allowFeedback && (
+                                    <Tooltip title="All actions disabled for protected content">
+                                      <IconButton
+                                        size="small"
+                                        disabled
+                                        sx={{
+                                          color: "text.disabled",
+                                        }}
+                                      >
+                                        <LockIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
                                 </Box>
 
                                 {/* Save Status Indicator */}
@@ -1452,6 +1623,12 @@ const handleSaveHadith = async (hadithId) => {
                                     border: '1px solid',
                                     borderColor: 'divider',
                                     position: 'relative',
+                                    ...(!restrictions.allowCopy && {
+                                      userSelect: 'none',
+                                      WebkitUserSelect: 'none',
+                                      MozUserSelect: 'none',
+                                      msUserSelect: 'none',
+                                    })
                                   }}
                                 >
                                   <Typography
@@ -1504,6 +1681,12 @@ const handleSaveHadith = async (hadithId) => {
                                     backgroundColor: 'white',
                                     border: '1px solid',
                                     borderColor: 'divider',
+                                    ...(!restrictions.allowCopy && {
+                                      userSelect: 'none',
+                                      WebkitUserSelect: 'none',
+                                      MozUserSelect: 'none',
+                                      msUserSelect: 'none',
+                                    })
                                   }}
                                 >
                                   <Typography
@@ -1534,8 +1717,18 @@ const handleSaveHadith = async (hadithId) => {
                                   </Typography>
                                 )}
 
-                                {/* Login Prompt */}
-                                {!user && (
+                                {/* Restriction Notice for non-logged in users */}
+                                {!user && !restrictions.allowSave && (
+                                  <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+                                    <Typography variant="body2" color="text.secondary" align="center">
+                                      <LockIcon fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                                      Saving hadiths is disabled for this protected content
+                                    </Typography>
+                                  </Box>
+                                )}
+
+                                {/* Login Prompt for non-logged in users when save is allowed */}
+                                {!user && restrictions.allowSave && (
                                   <Box sx={{ mt: 3, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
                                     <Typography variant="body2" color="text.secondary" align="center">
                                       Want to save this hadith?{' '}
@@ -1597,8 +1790,19 @@ const handleSaveHadith = async (hadithId) => {
                 >
                   {loadingHadiths 
                     ? 'Loading hadiths from all chapters...' 
-                    : `Showing ${getPaginatedHadiths().length} hadiths on page ${currentPage} of ${getTotalPages()} • Total ${allHadiths.length} hadiths • Dynamic pagination based on content length`
+                    : `Showing ${getPaginatedHadiths().length} hadiths on page ${currentPage} of ${getTotalPages()} • Total ${allHadiths.length} ahadith`
                   }
+                  {restrictions.isRestricted && (
+                    <>
+                      <br />
+                      <SecurityIcon fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                      <strong>Protected Content:</strong> {!restrictions.allowCopy && !restrictions.allowSave 
+                        ? 'Copying and saving disabled' 
+                        : !restrictions.allowCopy 
+                        ? 'Copying disabled, saving allowed' 
+                        : 'Some features restricted'}
+                    </>
+                  )}
                 </Typography>
               </Box>
             </>
