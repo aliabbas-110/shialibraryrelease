@@ -166,6 +166,8 @@ const handleSubmit = async () => {
               >
                 لو أن الغياض أقلام والبحر مداد و الجن حساب
                  والانس كتاب ما أحصوا فضائل علي بن أبي طالب عليه السلام 
+                 
+                 
               </Typography>
             </Paper>
 
@@ -173,7 +175,6 @@ const handleSubmit = async () => {
             <Typography
               variant="body1"
               sx={{
-                fontStyle: 'italic',
                 fontSize: { xs: '1rem', md: '1.1rem' },
                 lineHeight: 1.8,
                 mb: 3,
@@ -188,9 +189,8 @@ const handleSubmit = async () => {
             {/* Reference */}
             <Box
               sx={{
-                mt: 3,
-                pt: 3,
-                borderTop: '1px dashed',
+                mt: 0,
+                pt: 0,
                 borderColor: 'divider',
                 textAlign: 'center',
               }}
@@ -198,9 +198,8 @@ const handleSubmit = async () => {
               <Typography
                 variant="body2"
                 color="text.secondary"
-                sx={{ fontStyle: 'italic' }}
               >
-                Reference: Bihar al-Anwar, Volume 40, Page 74
+                Bihar al-Anwar, Volume 40, Page 74
               </Typography>
             </Box>
 
@@ -223,10 +222,11 @@ const handleSubmit = async () => {
                   lineHeight: 1.7,
                   color: 'text.primary',
                   textAlign: 'center',
-                  fontStyle: 'italic',
                 }}
               >
-                "Our aim is not to encompass all of his merits, for that is beyond reach. Rather, our goal is to gather a few leaves from those vast forests and extract a few pearls from those endless seas of virtues, so that hearts may grow in recognition, love, and understanding of our Imams."
+                "Our aim is not to encompass all of his merits, for that is beyond reach. Rather, our goal is to gather a few leaves from those vast forests and extract a few drops from those endless seas of virtues, so that hearts may grow in recognition, love, and understanding of our Imams."
+                  <br />
+                - Ali Abbas
               </Typography>
             </Paper>
           </Paper>
